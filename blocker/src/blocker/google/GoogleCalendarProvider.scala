@@ -1,0 +1,167 @@
+package blocker.google
+
+import blocker.*
+import cats.effect.IO
+import cats.effect.std.Console
+import cats.syntax.all.*
+import com.google.api.client.googleapis.json.GoogleJsonResponseException
+import com.google.api.client.util.DateTime
+import com.google.api.services.calendar.Calendar
+import com.google.api.services.calendar.model.{Event, EventAttendee, EventDateTime, Calendar as GCalendar}
+
+import java.time.{Instant, LocalDate, ZoneId}
+import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
+
+/** Reads and writes Google Calendar.
+ *
+ *  Privacy: external events are reduced to bare start/end intervals as soon as they're fetched. Titles,
+ *  descriptions, attendees and calendar names are never retained, logged, or written anywhere.
+ */
+final class GoogleCalendarProvider(clients: GoogleClients, store: TokenStore, calendarName: String, zone: ZoneId)
+    extends CalendarProvider:
+  import GoogleCalendarProvider.*
+
+  val id = "google"
+
+  def ensureBlocksCalendar(acct: Account): IO[String] =
+    for
+      cal      <- clients.calendar(acct)
+      state    <- store.read(acct)
+      existing <- state.flatMap(_.blocksCalendarId).traverse(cid => exists(cal, cid).map(Option.when(_)(cid)))
+      calId <- existing.flatten match
+        case Some(cid) => IO.pure(cid)
+        case None =>
+          IO.blocking(cal.calendars().insert(GCalendar().setSummary(calendarName).setTimeZone(zone.getId)).execute().getId)
+            .flatTap(cid => store.write(acct, UserState(Some(cid))))
+    yield calId
+
+  def snapshot(acct: Account, range: Interval, opts: SnapshotOptions): IO[Snapshot] =
+    for
+      cal       <- clients.calendar(acct)
+      ids       <- IO.blocking(calendarIds(cal)).map(_.filterNot(opts.excludeCalendars))
+      perCal    <- ids.traverse(cid => IO.blocking(events(cal, cid, range, acct, opts)).attempt)
+      unreadable = perCal.count(_.isLeft)
+      _         <- Console[IO].errorln(s"WARN $acct: skipped $unreadable unreadable calendar(s)").whenA(unreadable > 0)
+      entries    = perCal.collect { case Right(es) => es }.flatten
+    yield Snapshot(entries.collect { case Left(i) => i }, entries.collect { case Right(b) => b })
+
+  def create(calendarId: String, b: NewBlock): IO[BlockRef] =
+    clients.calendar(b.organizer).flatMap { cal =>
+      IO.blocking {
+        val attendees = b.organizer.email :: b.guests.map(_.email)
+        val ev = Event()
+          .setSummary(b.title)
+          .setDescription(s"Managed by calendar-blocker (request '${b.tag.requestId}').")
+          .setStart(dateTime(b.interval.start))
+          .setEnd(dateTime(b.interval.end))
+          .setExtendedProperties(
+            Event.ExtendedProperties().setShared(
+              Map(
+                TagKey        -> "1",
+                RequestKey    -> b.tag.requestId,
+                PeriodKey     -> b.tag.periodKey,
+                OrganizerKey  -> b.organizer.toString,
+                AttendeesKey  -> attendees.mkString(",")
+              ).asJava
+            )
+          )
+        if b.guests.nonEmpty then ev.setAttendees(b.guests.map(g => EventAttendee().setEmail(g.email)).asJava)
+        val created = cal.events().insert(calendarId, ev).setSendUpdates(if b.guests.isEmpty then "none" else "all").execute()
+        BlockRef(b.organizer, calendarId, created.getId)
+      }
+    }
+
+  def patch(ref: BlockRef, interval: Interval): IO[Unit] =
+    clients.calendar(ref.account).flatMap { cal =>
+      IO.blocking {
+        val ev = Event().setStart(dateTime(interval.start)).setEnd(dateTime(interval.end))
+        cal.events().patch(ref.calendarId, ref.eventId, ev).setSendUpdates("all").execute()
+      }.void
+    }
+
+  def delete(ref: BlockRef): IO[Unit] =
+    clients.calendar(ref.account).flatMap { cal =>
+      IO.blocking(cal.events().delete(ref.calendarId, ref.eventId).setSendUpdates("all").execute()).void.recover {
+        case e: GoogleJsonResponseException if e.getStatusCode == 404 || e.getStatusCode == 410 => ()
+      }
+    }
+
+  private def exists(cal: Calendar, calendarId: String): IO[Boolean] =
+    IO.blocking(cal.calendars().get(calendarId).execute()).as(true).recover {
+      case e: GoogleJsonResponseException if e.getStatusCode == 404 || e.getStatusCode == 410 => false
+    }
+
+  private def calendarIds(cal: Calendar): List[String] =
+    val out           = ListBuffer.empty[String]
+    var token: String = null
+    while
+      val page = cal.calendarList().list().setPageToken(token).execute()
+      out ++= Option(page.getItems).fold(Nil)(_.asScala.map(_.getId))
+      token = page.getNextPageToken
+      token != null
+    do ()
+    out.toList
+
+  private def events(cal: Calendar, calendarId: String, range: Interval, acct: Account, opts: SnapshotOptions) =
+    val out           = ListBuffer.empty[Either[Interval, Block]]
+    var token: String = null
+    while
+      val page = cal
+        .events()
+        .list(calendarId)
+        .setTimeMin(DateTime(range.start.toEpochMilli))
+        .setTimeMax(DateTime(range.end.toEpochMilli))
+        .setSingleEvents(true)
+        .setMaxResults(2500)
+        .setPageToken(token)
+        .execute()
+      out ++= Option(page.getItems).fold(Nil)(_.asScala.flatMap(classify(acct, calendarId, _, opts)))
+      token = page.getNextPageToken
+      token != null
+    do ()
+    out.toList
+
+object GoogleCalendarProvider:
+  private[google] val TagKey       = "calblock"
+  private[google] val RequestKey   = "calblockRequest"
+  private[google] val PeriodKey    = "calblockPeriod"
+  private[google] val OrganizerKey = "calblockOrganizer"
+  private[google] val AttendeesKey = "calblockAttendees"
+
+  /** Tagged events become blocks; other events that occupy time become bare intervals; the rest is dropped. */
+  private[google] def classify(acct: Account, calendarId: String, e: Event, opts: SnapshotOptions): Option[Either[Interval, Block]] =
+    val shared    = Option(e.getExtendedProperties).flatMap(p => Option(p.getShared)).fold(Map.empty[String, String])(_.asScala.toMap)
+    val attendees = Option(e.getAttendees).fold(Nil)(_.asScala.toList)
+    val interval  = (instant(e.getStart, opts.zone), instant(e.getEnd, opts.zone)).mapN(Interval(_, _))
+    val allDay    = Option(e.getStart).exists(_.getDate != null)
+
+    if e.getStatus == "cancelled" then None
+    else if shared.get(TagKey).contains("1") then
+      for
+        requestId <- shared.get(RequestKey)
+        periodKey <- shared.get(PeriodKey)
+        organizer <- shared.get(OrganizerKey).map(Account.parse)
+        i         <- interval
+      yield Right(
+        Block(
+          BlockRef(acct, calendarId, e.getId),
+          BlockTag(requestId, periodKey),
+          organizer,
+          shared.get(AttendeesKey).fold(Set(organizer.email))(_.split(",").map(_.trim.toLowerCase).toSet),
+          i,
+          attendees.filter(_.getResponseStatus == "declined").flatMap(a => Option(a.getEmail)).map(_.toLowerCase).toSet
+        )
+      )
+    else if e.getTransparency == "transparent" then None
+    else if attendees.exists(a => a.getSelf == true && a.getResponseStatus == "declined") then None
+    else if allDay && !opts.allDayEventsBusy then None
+    else interval.map(Left(_))
+
+  private def instant(t: EventDateTime, zone: ZoneId): Option[Instant] =
+    Option(t).flatMap { t =>
+      Option(t.getDateTime).map(dt => Instant.ofEpochMilli(dt.getValue))
+        .orElse(Option(t.getDate).map(d => LocalDate.parse(d.toStringRfc3339).atStartOfDay(zone).toInstant))
+    }
+
+  private def dateTime(i: Instant): EventDateTime = EventDateTime().setDateTime(DateTime(i.toEpochMilli))

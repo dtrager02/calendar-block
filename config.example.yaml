@@ -1,0 +1,40 @@
+timezone: America/Los_Angeles     # windows are interpreted in this zone for everyone
+horizonDays: 30                   # how far ahead recurring requests are scheduled
+weekStart: MONDAY
+slotStep: 15m                     # candidate start times are this far apart
+allDayEventsBusy: false           # all-day events (holidays, birthdays) don't block time
+owner: me@gmail.com               # default attendee for requests without `attendees`
+publicBaseUrl: https://example.com
+onboardPort: 8735
+calendarName: Auto Blocks
+userOverrides:
+  me@gmail.com:
+    excludeCalendars: []          # calendar IDs to ignore when computing busy time
+
+requests:
+  - id: gaming                    # never rename an id: it links existing blocks to the request
+    title: Gaming
+    priority: 5                   # higher wins
+    recurrence: weekly            # daily | weekly | once
+    duration: 2h                  # 2h, 90m, 1h30m
+    windows:
+      - { days: [FRI, SAT, SUN], from: "18:00", to: "23:30" }
+    strategies: { minimal-gaps: 2, prefer-soonest: 1 }
+
+  - id: band-practice
+    title: Band practice
+    priority: 8
+    attendees: [me@gmail.com, b@gmail.com, c@gmail.com]   # first is the organizer
+    recurrence: weekly
+    duration: 2h
+    windows:
+      - { days: [SAT, SUN], from: "10:00", to: "20:00" }
+
+  - id: tax-prep
+    title: Taxes
+    priority: 200
+    recurrence: once
+    between: { from: 2026-12-01, to: 2026-12-20 }
+    duration: 3h
+    windows:
+      - { days: [SAT, SUN], from: "09:00", to: "17:00" }

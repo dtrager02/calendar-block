@@ -1,0 +1,29 @@
+package build
+
+import mill._
+import mill.scalalib._
+
+val circeVersion = "0.14.10"
+
+object blocker extends ScalaModule {
+  def scalaVersion = "3.6.4"
+
+  def mainClass = Some("blocker.Main")
+
+  def mvnDeps = Seq(
+    mvn"org.typelevel::cats-effect:3.6.1",
+    mvn"io.circe::circe-core:$circeVersion",
+    mvn"io.circe::circe-parser:$circeVersion",
+    mvn"io.circe::circe-yaml-v12:1.15.0",
+    mvn"com.google.apis:google-api-services-calendar:v3-rev20260925-2.0.0",
+    mvn"com.google.api-client:google-api-client:2.9.2",
+    mvn"com.google.http-client:google-http-client-gson:2.2.0",
+  )
+
+  object test extends ScalaTests with TestModule.Munit {
+    def mvnDeps = Seq(
+      mvn"org.scalameta::munit:1.0.3",
+      mvn"org.typelevel::munit-cats-effect:2.0.0",
+    )
+  }
+}
