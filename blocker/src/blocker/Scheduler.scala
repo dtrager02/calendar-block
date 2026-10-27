@@ -15,13 +15,6 @@ object Scheduler:
       (Periods.horizonEnd(s, now) :: occurrences.map(_.period.end)).max
     )
 
-  /** One block per tag: the organizer's own copy (guests' copies only matter as "not hard busy").
-   *  Extra organizer copies of the same tag that haven't started are returned for deletion.
-   */
-  def canonical(blocks: List[Block], now: Instant): (Map[BlockTag, Block], List[Block]) =
-    val grouped = blocks.filter(b => b.ref.account == b.organizer).groupBy(_.tag).view.mapValues(_.sortBy(_.ref.eventId))
-    (grouped.mapValues(_.head).toMap, grouped.values.flatMap(_.tail).filterNot(_.interval.start.isBefore(now)).toList)
-
   /** @param available emails whose calendars were read successfully
    *  @param busy      unmanaged busy time per email; these are never moved and outrank every request
    *  @param blocks    every tagged event seen on any available calendar
@@ -34,7 +27,8 @@ object Scheduler:
       busy: Map[String, List[Interval]],
       blocks: List[Block]
   ): Plan =
-    val (byTag, duplicates)  = canonical(blocks, now)
+    // Guests' copies of joint events only matter as "not hard busy"; the organizer's copy is the block.
+    val byTag                = blocks.filter(b => b.ref.account == b.organizer).map(b => b.tag -> b).toMap
     val (active, skipped)    = requests.partition(_.emails.subsetOf(available))
     val activeById           = active.map(r => r.id -> r).toMap
     val skippedIds           = skipped.map(_.id).toSet
@@ -44,7 +38,7 @@ object Scheduler:
     val hard      = mutable.Map.from(available.map(e => e -> busy.getOrElse(e, Nil)))
     val satisfied = mutable.Set.empty[BlockTag]
     val keep      = ListBuffer.empty[Block]
-    val delete    = ListBuffer.from(duplicates)
+    val delete    = ListBuffer.empty[Block]
     val future    = mutable.Map.empty[BlockTag, Block]
 
     def makeHard(b: Block): Unit = b.attendees.foreach(e => hard.updateWith(e)(_.map(b.interval :: _)))

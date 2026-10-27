@@ -1,6 +1,6 @@
 package blocker.google
 
-import blocker.{Account, AuthProvider, TokenStore}
+import blocker.{Account, AccountUnavailable, AuthProvider, TokenStore}
 import cats.effect.IO
 import com.google.api.client.auth.oauth2.{BearerToken, Credential, TokenResponse}
 import com.google.api.client.googleapis.auth.oauth2.{GoogleAuthorizationCodeFlow, GoogleClientSecrets}
@@ -36,7 +36,7 @@ final class GoogleClients(credentialsFile: Path, tokenDir: Path):
   def calendar(acct: Account): IO[Calendar] =
     IO.blocking(Option(flow.loadCredential(acct.email))).flatMap {
       case Some(c) => IO.pure(build(c))
-      case None    => IO.raiseError(IllegalStateException(s"no stored Google token for ${acct.email}; run onboard"))
+      case None    => IO.raiseError(AccountUnavailable(acct, "no stored Google token; run onboard"))
     }
 
 object GoogleClients:

@@ -1,7 +1,6 @@
 package blocker
 
 import cats.effect.IO
-import cats.effect.std.Console
 import cats.syntax.all.*
 
 /** Everything the app needs from a calendar backend. Implementations live in their own package (e.g. `google`). */
@@ -14,15 +13,17 @@ trait CalendarProvider:
   /** Unmanaged busy time across all of the account's calendars, plus every tagged event seen.
    *  The account's blocks calendar must be read with no end bound, so blocks of requests removed from the
    *  config are found and deleted however far in the future they are.
+   *  Raises [[AccountUnavailable]] when the account must be re-onboarded before it can be read.
    */
   def snapshot(acct: Account, range: Interval, opts: SnapshotOptions): IO[Snapshot]
 
-  /** Creates `b` on the organizer's blocks calendar and invites its guests. */
-  def create(calendarId: String, b: NewBlock): IO[BlockRef]
+  /** Performs every operation, batching as the backend allows. Fails if any operation failed; whatever did
+   *  not apply is reconciled by the next run.
+   */
+  def applyAll(ops: List[BlockOp]): IO[Unit]
 
-  /** Sets the event's time and details. The provider must also store `details.fingerprint` for the next read. */
-  def update(ref: BlockRef, interval: Interval, details: EventDetails): IO[Unit]
-  def delete(ref: BlockRef): IO[Unit]
+/** The account can't be used until it is onboarded again, e.g. its token is missing, expired or revoked. */
+case class AccountUnavailable(account: Account, reason: String) extends Exception(s"$account: $reason")
 
 /** Browser-based consent for one account. */
 trait AuthProvider:
@@ -35,28 +36,18 @@ case class Provider(calendar: CalendarProvider, auth: AuthProvider)
 
 object Executor:
 
-  /** Applies `plan`, routing each operation to the provider of the account that owns the event.
-   *  Failures are logged and skipped. Returns the number of failed operations.
-   */
-  def run(plan: Plan, calendars: Map[String, CalendarProvider], blocksCalendarIds: Map[Account, String]): IO[Int] =
-    def provider(a: Account) =
-      IO.fromOption(calendars.get(a.provider))(IllegalStateException(s"no provider '${a.provider}'"))
-
-    def attempt(desc: String)(op: IO[Unit]): IO[Int] =
-      op.as(0).handleErrorWith(e => Console[IO].errorln(s"FAILED $desc: ${e.getMessage}").as(1))
-
-    val deletes = plan.delete.map(b => attempt(s"delete ${b.tag}")(provider(b.ref.account).flatMap(_.delete(b.ref))))
-    val patches = plan.patch.map(u =>
-      attempt(s"update ${u.block.tag}")(provider(u.block.ref.account).flatMap(_.update(u.block.ref, u.interval, u.details)))
-    )
-    val creates = plan.create.map { p =>
-      val organizer = p.request.attendees.head
-      attempt(s"create ${p.tag}") {
-        for
-          calendarId <- IO.fromOption(blocksCalendarIds.get(organizer))(IllegalStateException(s"no blocks calendar for $organizer"))
-          cal        <- provider(organizer)
-          _          <- cal.create(calendarId, NewBlock(p.tag, p.request.details, p.interval, organizer, p.request.attendees.tail))
-        yield ()
+  /** Turns `plan` into operations and gives each provider all of its operations in one call. Fails fast. */
+  def run(plan: Plan, calendars: Map[String, CalendarProvider], blocksCalendarIds: Map[Account, String]): IO[Unit] =
+    for
+      creates <- plan.create.traverse { p =>
+        val organizer = p.request.attendees.head
+        IO.fromOption(blocksCalendarIds.get(organizer))(IllegalStateException(s"no blocks calendar for $organizer"))
+          .map(BlockOp.Create(_, NewBlock(p.tag, p.request.details, p.interval, organizer, p.request.attendees.tail)))
       }
-    }
-    (deletes ++ patches ++ creates).sequence.map(_.sum)
+      ops = plan.delete.map(b => BlockOp.Delete(b.ref)) ++
+        plan.patch.map(u => BlockOp.Update(u.block.ref, u.interval, u.details)) ++
+        creates
+      _ <- ops.groupBy(_.account.provider).toList.traverse_ { (id, providerOps) =>
+        IO.fromOption(calendars.get(id))(IllegalStateException(s"no provider '$id'")).flatMap(_.applyAll(providerOps))
+      }
+    yield ()

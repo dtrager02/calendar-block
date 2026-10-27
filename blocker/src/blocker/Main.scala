@@ -1,11 +1,13 @@
 package blocker
 
 import blocker.google.{GoogleAuthProvider, GoogleCalendarProvider, GoogleClients}
-import cats.effect.{ExitCode, IO, IOApp}
+import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.effect.std.Console
 import cats.syntax.all.*
 
+import java.nio.channels.FileChannel
 import java.nio.file.{Path, Paths}
+import java.nio.file.StandardOpenOption.{CREATE, WRITE}
 import java.time.format.DateTimeFormatter
 import scala.concurrent.duration.*
 
@@ -54,7 +56,21 @@ object Main extends IOApp:
       Map("google" -> Provider(GoogleCalendarProvider(google, store, cfg.calendarName, cfg.settings.zone), GoogleAuthProvider(google)))
     }
 
+  /** Exclusive lock on `<home>/run.lock` so two runs never plan from the same read. The OS releases it on exit. */
+  private def runLock(home: Path): Resource[IO, Unit] =
+    Resource.make(IO.blocking {
+      TokenStore.privateDirs(home)
+      val channel = FileChannel.open(home.resolve("run.lock"), CREATE, WRITE)
+      Option(channel.tryLock()).getOrElse {
+        channel.close()
+        throw IllegalStateException("another run is in progress")
+      }
+    })(lock => IO.blocking(lock.channel.close())).void
+
   private def runCmd(home: Path, config: Path, dryRun: Boolean): IO[ExitCode] =
+    runLock(home).surround(plan(home, config, dryRun))
+
+  private def plan(home: Path, config: Path, dryRun: Boolean): IO[ExitCode] =
     val store = TokenStore(home)
     for
       cfg       <- Config.load(config)
@@ -64,13 +80,18 @@ object Main extends IOApp:
       accounts  <- store.accounts
       range      = Scheduler.snapshotRange(cfg.settings, cfg.requests, now)
       loaded <- accounts.traverse { a =>
-        calendars.get(a.provider) match
-          case None => Console[IO].errorln(s"WARN $a: unknown provider, skipping").as(None)
-          case Some(p) =>
-            val calendarId = if dryRun then IO.pure(None) else p.ensureBlocksCalendar(a).map(Some(_))
-            (calendarId, p.snapshot(a, range, cfg.snapshotOptions(a))).tupled
-              .map(r => Some(a -> r))
-              .handleErrorWith(e => Console[IO].errorln(s"WARN $a: skipping (${e.getMessage})").as(None))
+        val load =
+          for
+            p    <- IO.fromOption(calendars.get(a.provider))(IllegalStateException(s"no provider for $a"))
+            snap <- p.snapshot(a, range, cfg.snapshotOptions(a))
+            calendarId <- (snap.blocksCalendarId, dryRun) match
+              case (None, false) => p.ensureBlocksCalendar(a).map(Some(_))
+              case (id, _)       => IO.pure(id)
+          yield Some(a -> (calendarId, snap))
+        // One person's expired login shouldn't stop scheduling for everyone else; any other error fails the run.
+        load.recoverWith { case e: AccountUnavailable =>
+          Console[IO].errorln(s"WARN ${e.getMessage}; their requests are skipped until they onboard again").as(None)
+        }
       }
       ok   = loaded.flatten
       plan = Scheduler.plan(
@@ -81,9 +102,9 @@ object Main extends IOApp:
         ok.map((a, r) => a.email -> r._2.busy).toMap,
         ok.flatMap(_._2._2.blocks)
       )
-      _        <- report(cfg, plan, dryRun)
-      failures <- if dryRun then IO.pure(0) else Executor.run(plan, calendars, ok.flatMap((a, r) => r._1.map(a -> _)).toMap)
-    yield if failures == 0 then ExitCode.Success else ExitCode.Error
+      _ <- report(cfg, plan, dryRun)
+      _ <- Executor.run(plan, calendars, ok.flatMap((a, r) => r._1.map(a -> _)).toMap).unlessA(dryRun)
+    yield ExitCode.Success
 
   private def report(cfg: AppConfig, plan: Plan, dryRun: Boolean): IO[Unit] =
     val fmt = DateTimeFormatter.ofPattern("EEE yyyy-MM-dd HH:mm").withZone(cfg.settings.zone)
@@ -114,11 +135,8 @@ object Main extends IOApp:
       p        <- IO.fromOption(registry.get(provider))(IllegalArgumentException(s"unknown provider '$provider'"))
       acct      = Account(provider, email.trim.toLowerCase)
       invite    = Onboard.randomToken()
-      onSuccess = (a: Account) =>
-        store.read(a).flatMap(s => store.write(a, UserState(None)).whenA(s.isEmpty)) >>
-          p.calendar.ensureBlocksCalendar(a).void.handleErrorWith(e =>
-            Console[IO].errorln(s"WARN could not create blocks calendar yet (${e.getMessage}); the next run will retry")
-          )
+      // Runs only see accounts with a state file, which ensureBlocksCalendar writes once the calendar exists.
+      onSuccess = (a: Account) => p.calendar.ensureBlocksCalendar(a).void
       ob <- Onboard.create(p.auth, acct.email, s"$base${Onboard.CallbackPath}", invite, onSuccess)
       result <- Onboard.serve(ob, cfg.onboardPort).use { _ =>
         IO.println(s"Send this link to ${acct.email}:\n\n  $base${Onboard.StartPath}?invite=$invite\n") >>

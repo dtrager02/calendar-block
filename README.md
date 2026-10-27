@@ -91,10 +91,19 @@ java -jar out/blocker/assembly.dest/out.jar onboard --email b@gmail.com [--timeo
 ```cron
 0 * * * * JAVA=/usr/bin/java /path/to/calendar-blocker/run.sh >> /path/to/calendar-blocker.log 2>&1
 ```
-- **Each run pulls first.** `run.sh` runs `git pull --ff-only` in the config checkout, so merged pull requests take effect on the next run. If the pull fails, it warns and uses the current checkout.
+- **Each run pulls first.** `run.sh` runs `git pull --ff-only` in the config checkout, so merged pull requests take effect on the next run. If the pull fails, the run is aborted.
 - **Different checkout location:** set `CONFIG_REPO`.
 - **Dry run:** `run.sh --dry-run` prints the plan without changing anything.
-- **Exit code:** a run exits non-zero if any calendar operation failed.
+- **Failures:** a run fails fast. The first error (network, API, bad config) stops it with a non-zero exit, and nothing is retried within the run.
+  - Changes already applied stay applied, and the next cron run reconciles the rest, since every run recomputes the whole plan from the calendars.
+  - The one exception is an account whose login has expired or been revoked. Its requests are skipped with a warning so everyone else still gets scheduled.
+- **Runs never overlap.** A run holds a lock on `<home>/run.lock`, so one started while another is in progress exits immediately. The operating system releases the lock if a run dies.
+- **API usage per person, per run:**
+  - one call to list their calendars
+  - one batched call for the first page of every calendar's events
+  - one batched call per 50 changes; unchanged events cost nothing
+
+  Each request inside a batch still counts against Google's quota. Batching saves round trips, not quota.
 
 ## Configuration
 The live config is in [dtrager02/calendar-blocker-config](https://github.com/dtrager02/calendar-blocker-config). [`config.example.yaml`](config.example.yaml) here documents every option.
@@ -119,12 +128,12 @@ Every key is validated, and unknown keys are rejected. Run `validate --config FI
 
 ### Layout
 - **Provider-neutral core:** `Domain`, `Periods`, `Strategies`, `Scheduler`. Pure, with no IO.
-- **Provider interfaces:** `Provider.scala` defines the `CalendarProvider` and `AuthProvider` traits, plus the `Executor` that routes plan operations.
+- **Provider interfaces:** `Provider.scala` defines the `CalendarProvider` and `AuthProvider` traits, plus the `Executor` that turns a plan into `BlockOp`s and hands each provider its share in one call.
 - **Google implementation:** `google/`.
 - **Onboarding:** `Onboard.scala`, the invite listener (provider-neutral).
 - **Local state:** `TokenStore.scala`.
 
 ### Adding a provider (e.g. Outlook)
-1. Implement `CalendarProvider` and `AuthProvider` in a new package. Map `BlockTag` onto the provider's own event metadata (Graph `singleValueExtendedProperties`, CalDAV `X-` properties, and so on).
+1. Implement `CalendarProvider` and `AuthProvider` in a new package. `applyAll` receives all of a run's writes at once, so map it onto the backend's batch API if it has one (Graph `$batch`); otherwise run the operations in sequence. Map `BlockTag` onto the provider's own event metadata (Graph `singleValueExtendedProperties`, CalDAV `X-` properties, and so on).
 2. Register the provider in `Main.providers`.
 3. Refer to that provider's people as `outlook:someone@example.com` in `attendees`, and onboard them with `--provider outlook`.

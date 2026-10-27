@@ -54,8 +54,10 @@ case class Block(
 /** Brings an existing block to the planned time and the request's current details in one provider call. */
 case class BlockUpdate(block: Block, interval: Interval, details: EventDetails)
 
-/** What one account's calendars look like: unmanaged busy time plus every tagged event seen. */
-case class Snapshot(busy: List[Interval], blocks: List[Block])
+/** What one account's calendars look like: unmanaged busy time, every tagged event seen, and the account's
+ *  blocks calendar if it still exists.
+ */
+case class Snapshot(busy: List[Interval], blocks: List[Block], blocksCalendarId: Option[String])
 
 case class SnapshotOptions(zone: ZoneId, allDayEventsBusy: Boolean, excludeCalendars: Set[String])
 
@@ -66,6 +68,18 @@ case class NewBlock(
     organizer: Account,
     guests: List[Account]
 )
+
+/** One write to a calendar. Providers receive all of a run's operations at once so they can batch them. */
+enum BlockOp:
+  case Create(calendarId: String, block: NewBlock)
+  case Update(ref: BlockRef, interval: Interval, details: EventDetails)
+  case Delete(ref: BlockRef)
+
+  /** The account whose credentials perform this operation. */
+  def account: Account = this match
+    case Create(_, b)    => b.organizer
+    case Update(r, _, _) => r.account
+    case Delete(r)       => r.account
 
 enum Recurrence:
   case Daily, Weekly, Once
