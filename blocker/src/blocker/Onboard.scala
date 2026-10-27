@@ -12,7 +12,7 @@ import java.util.Base64
 
 case class Response(status: Int, body: String, location: Option[String] = None)
 
-/** Handles one invite: `/calblock/start` redirects to the provider's consent page, `/calblock/callback` finishes it. */
+/** Handles one invite: `/start` redirects to the provider's consent page, `/callback` finishes it. */
 final class Onboard private (
     auth: AuthProvider,
     email: String,
@@ -53,8 +53,8 @@ final class Onboard private (
     case _ => IO.pure(page(404, "Not found."))
 
 object Onboard:
-  val StartPath    = "/calblock/start"
-  val CallbackPath = "/calblock/callback"
+  val StartPath    = "/start"
+  val CallbackPath = "/callback"
 
   def create(auth: AuthProvider, email: String, redirectUri: String, invite: String, onSuccess: Account => IO[Unit]): IO[Onboard] =
     (Ref.of[IO, Set[String]](Set.empty), Deferred[IO, Account]).mapN(Onboard(auth, email, redirectUri, invite, onSuccess, _, _))
@@ -92,7 +92,7 @@ object Onboard:
         case Array(k)    => URLDecoder.decode(k, UTF_8) -> ""
     }.toMap)
 
-  /** Serves `onboard` on loopback only; the reverse proxy provides TLS and the public hostname. */
+  /** Serves `onboard` on loopback only; a tunnel or reverse proxy provides TLS and the public hostname. */
   def serve(onboard: Onboard, port: Int): Resource[IO, Unit] =
     Dispatcher.parallel[IO].flatMap { dispatcher =>
       def respond(ex: HttpExchange): Unit =

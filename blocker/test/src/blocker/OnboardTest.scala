@@ -15,7 +15,7 @@ class OnboardTest extends CatsEffectSuite:
   private def setup(result: Either[String, Account] = Right(Account("google", "b@x.com"))) =
     for
       stored <- Ref.of[IO, List[Account]](Nil)
-      ob     <- Onboard.create(FakeAuth(result), "b@x.com", "https://example.com/calblock/callback", invite, a => stored.update(a :: _))
+      ob     <- Onboard.create(FakeAuth(result), "b@x.com", "https://calendar.example.com/callback", invite, a => stored.update(a :: _))
     yield (ob, stored)
 
   private def start(ob: Onboard) =
