@@ -45,7 +45,7 @@ final class GoogleCalendarProvider(clients: GoogleClients, store: TokenStore, ca
         cal       <- clients.calendar(acct)
         listed    <- IO.blocking(calendarIds(cal))
         blocksCal <- storedBlocksCalendar(acct, listed)
-        others     = listed.filterNot(opts.excludeCalendars).filterNot(blocksCal.contains)
+        others     = if opts.blocksOnly then Nil else listed.filterNot(opts.excludeCalendars).filterNot(blocksCal.contains)
         reads      = blocksCal.map(_ -> None).toList ++ others.map(_ -> Some(range.end))
         events    <- IO.blocking(listEvents(cal, reads, range.start))
         entries    = events.flatMap((cid, es) => es.flatMap(classify(acct, cid, _, opts)))

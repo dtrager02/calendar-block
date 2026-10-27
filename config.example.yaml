@@ -4,8 +4,8 @@ weekStart: MONDAY
 slotStep: 15m                     # candidate start times are this far apart
 allDayEventsBusy: false           # all-day events (holidays, birthdays) don't block time
 owner: me@gmail.com               # default attendee for requests without `attendees`
-publicBaseUrl: https://calendar.jeopardy.fit   # onboarding only; serves /start and /callback
-onboardPort: 8735                 # local port the tunnel forwards to
+publicBaseUrl: https://calendar.jeopardy.fit   # public URL of the onboarding page
+onboardPort: 8735                 # local port of the onboarding page (serve); the tunnel forwards to it
 calendarName: Auto Blocks
 userOverrides:
   me@gmail.com:

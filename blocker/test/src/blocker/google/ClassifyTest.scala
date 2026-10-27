@@ -12,7 +12,7 @@ class ClassifyTest extends FunSuite:
   import GoogleCalendarProvider.*
 
   private val acct = Account("google", "b@x.com")
-  private val opts = SnapshotOptions(ZoneOffset.UTC, allDayEventsBusy = false, excludeCalendars = Set.empty)
+  private val opts = SnapshotOptions(ZoneOffset.UTC, allDayEventsBusy = false, excludeCalendars = Set.empty, blocksOnly = false)
   private val s    = Instant.parse("2026-10-31T10:00:00Z")
   private val e    = Instant.parse("2026-10-31T12:00:00Z")
 

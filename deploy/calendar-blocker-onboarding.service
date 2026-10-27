@@ -1,0 +1,20 @@
+# Self-serve onboarding page for calendar-blocker. Scheduling itself stays a cron job (run.sh).
+# Install: edit User and paths, copy to /etc/systemd/system/, then
+#   sudo systemctl daemon-reload && sudo systemctl enable --now calendar-blocker-onboarding
+[Unit]
+Description=calendar-blocker onboarding page
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+ExecStartPre=/usr/bin/git -C /home/ubuntu/.config/calendar-blocker-config pull --ff-only --quiet
+ExecStart=/usr/bin/java -jar /home/ubuntu/calendar-blocker/out/blocker/assembly.dest/out.jar serve
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/.config/calendar-blocker /home/ubuntu/.config/calendar-blocker-config
+
+[Install]
+WantedBy=multi-user.target

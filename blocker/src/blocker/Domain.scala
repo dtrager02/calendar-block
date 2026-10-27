@@ -59,7 +59,10 @@ case class BlockUpdate(block: Block, interval: Interval, details: EventDetails)
  */
 case class Snapshot(busy: List[Interval], blocks: List[Block], blocksCalendarId: Option[String])
 
-case class SnapshotOptions(zone: ZoneId, allDayEventsBusy: Boolean, excludeCalendars: Set[String])
+/** `blocksOnly` reads just the account's blocks calendar: for people not in any request, whose other calendars
+ *  are never needed but whose leftover blocks may still have to be deleted.
+ */
+case class SnapshotOptions(zone: ZoneId, allDayEventsBusy: Boolean, excludeCalendars: Set[String], blocksOnly: Boolean)
 
 case class NewBlock(
     tag: BlockTag,

@@ -20,7 +20,13 @@ case class AppConfig(
     requests: List[Request]
 ):
   def snapshotOptions(a: Account): SnapshotOptions =
-    SnapshotOptions(settings.zone, allDayEventsBusy, excludeCalendars.getOrElse(a.email, Set.empty))
+    SnapshotOptions(settings.zone, allDayEventsBusy, excludeCalendars.getOrElse(a.email, Set.empty), !attendees(a.email))
+
+  /** Everyone named in a request. Only they have their calendars read in full. */
+  def attendees: Set[String] = requests.flatMap(_.emails).toSet
+
+  /** Organizers own the events, so only they need a blocks calendar. */
+  def organizers: Set[String] = requests.map(_.attendees.head.email).toSet
 
 object Config:
 

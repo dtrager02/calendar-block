@@ -29,6 +29,7 @@ A cron-run script that reads the Google Calendars of everyone who has onboarded,
 - **Permissions requested:**
   - `calendar.readonly`
   - `calendar.app.created`: the app can create its own calendar and manage events **only on calendars it created**. It can't edit or delete anyone's existing events.
+- **Only people named in the config are read.** Anyone can connect, but the app reads only the calendars of people named in a request. For anyone else, it reads only their own Auto Blocks calendar, if they have one.
 - **Revoking.** Anyone can revoke access at https://myaccount.google.com/permissions. The next run skips their requests.
 
 ## Setup
@@ -50,7 +51,7 @@ The app reads from two directories, both under the home directory of whoever run
 |---|---|---|
 | `~/.config/calendar-blocker-config/config.yaml` | The configuration: a checkout of the **public** config repo, [dtrager02/calendar-blocker-config](https://github.com/dtrager02/calendar-blocker-config), where friends propose changes by pull request. | `--config FILE` |
 | `~/.config/calendar-blocker/credentials.json` | The OAuth client JSON downloaded from Google. **Private.** | `--home DIR` |
-| `~/.config/calendar-blocker/google/` | Written by the app: tokens and per-user state. **Private.** | `--home DIR` |
+| `~/.config/calendar-blocker/google/` | Written by the app: one token file and one state file per person. **Private.** | `--home DIR` |
 
 Never put secrets in the config repo.
 
@@ -63,9 +64,29 @@ chmod 600 ~/.config/calendar-blocker/credentials.json
 java -jar out/blocker/assembly.dest/out.jar validate   # checks the config
 ```
 
-### Exposing onboarding (Cloudflare Tunnel)
-`onboard` starts a small HTTP listener on `127.0.0.1:<onboardPort>` (default 8735). It runs only while an invite is pending, and it never listens on a public interface. A Cloudflare Tunnel gives it a public HTTPS hostname without opening any ports:
+### Onboarding page (self-serve)
+`serve` runs a small, always-on onboarding page. Scheduling itself stays a cron job. **Anyone** can open the page and connect their Google Calendar:
 
+1. They visit `https://calendar.jeopardy.fit/` and click **Connect Google Calendar**.
+2. They sign in and approve both permissions.
+3. The app stores their token. Nothing else happens until they're named in the shared config:
+   - **Not in any request:** nothing of theirs is read, and no Auto Blocks calendar is created for them.
+   - **Named in a request:** the next run reads their calendars, creates their Auto Blocks calendar if they organize an event, and books time.
+4. Expired logins are fixed the same way, by connecting again.
+
+Limits on who can connect:
+- **Testing mode:** Google itself only lets your listed test users sign in.
+- **Published but unverified:** Google caps the app at 100 users.
+
+**Run it as a service.** Edit the user and paths in [`deploy/calendar-blocker-onboarding.service`](deploy/calendar-blocker-onboarding.service), then:
+```sh
+sudo cp deploy/calendar-blocker-onboarding.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now calendar-blocker-onboarding
+```
+- The page listens only on `127.0.0.1:<onboardPort>` (default 8735).
+- It reads the config once at startup, so restart it if `publicBaseUrl` or `onboardPort` changes.
+
+**Expose it with a Cloudflare Tunnel:**
 1. In the Cloudflare dashboard, go to **Zero Trust → Networks → Tunnels**.
    - If you already have a tunnel for this server, open it.
    - Otherwise, click **Create a tunnel → Cloudflared** and run the install command it shows on the server.
@@ -76,16 +97,7 @@ java -jar out/blocker/assembly.dest/out.jar validate   # checks the config
    - Service: **HTTP**, `localhost:8735`
 3. Make sure `publicBaseUrl: https://calendar.jeopardy.fit` is set in the config repo's `config.yaml`.
 
-While no `onboard` command is running, the hostname shows a Cloudflare error page. That's expected.
-
-### Onboarding a person (yourself first)
-```sh
-java -jar out/blocker/assembly.dest/out.jar onboard --email b@gmail.com [--timeout 1h]
-```
-1. The command prints a one-time invite link. Send it to the person.
-2. They open it, sign in with that Google account, and approve.
-3. The app checks that they signed in as the invited address and that they granted both permissions. It then stores the token and creates their Auto Blocks calendar.
-4. The command exits once the invite is used, or when the timeout passes.
+**Where tokens live.** Each person's refresh token is its own owner-only file, `~/.config/calendar-blocker/google/tokens/<email>`. Only the onboarding page writes it, by atomically replacing the whole file. Runs only read tokens and keep access tokens in memory, so the page and a run can never overwrite each other.
 
 ### Cron
 ```cron
@@ -130,10 +142,10 @@ Every key is validated, and unknown keys are rejected. Run `validate --config FI
 - **Provider-neutral core:** `Domain`, `Periods`, `Strategies`, `Scheduler`. Pure, with no IO.
 - **Provider interfaces:** `Provider.scala` defines the `CalendarProvider` and `AuthProvider` traits, plus the `Executor` that turns a plan into `BlockOp`s and hands each provider its share in one call.
 - **Google implementation:** `google/`.
-- **Onboarding:** `Onboard.scala`, the invite listener (provider-neutral).
+- **Onboarding:** `Onboard.scala`, the self-serve onboarding page (provider-neutral).
 - **Local state:** `TokenStore.scala`.
 
 ### Adding a provider (e.g. Outlook)
 1. Implement `CalendarProvider` and `AuthProvider` in a new package. `applyAll` receives all of a run's writes at once, so map it onto the backend's batch API if it has one (Graph `$batch`); otherwise run the operations in sequence. Map `BlockTag` onto the provider's own event metadata (Graph `singleValueExtendedProperties`, CalDAV `X-` properties, and so on).
 2. Register the provider in `Main.providers`.
-3. Refer to that provider's people as `outlook:someone@example.com` in `attendees`, and onboard them with `--provider outlook`.
+3. Refer to that provider's people as `outlook:someone@example.com` in `attendees`, and run a second onboarding page with `serve --provider outlook`.

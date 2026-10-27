@@ -39,6 +39,10 @@ class ConfigTest extends FunSuite:
     assertEquals(cfg.publicBaseUrl, Some("https://example.com"))
     assertEquals(cfg.calendarName, "Auto Blocks")
     assertEquals(cfg.snapshotOptions(Account("google", "me@gmail.com")).excludeCalendars, Set("holidays"))
+    assertEquals(cfg.attendees, Set("me@gmail.com", "b@gmail.com"))
+    assertEquals(cfg.organizers, Set("me@gmail.com"))
+    assert(!cfg.snapshotOptions(Account("google", "b@gmail.com")).blocksOnly, "attendees are read in full")
+    assert(cfg.snapshotOptions(Account("google", "stranger@gmail.com")).blocksOnly, "others only have their blocks read")
 
     val List(gaming, band) = cfg.requests: @unchecked
     assertEquals(gaming.attendees, List(Account("google", "me@gmail.com")))

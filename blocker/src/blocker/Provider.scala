@@ -25,12 +25,12 @@ trait CalendarProvider:
 /** The account can't be used until it is onboarded again, e.g. its token is missing, expired or revoked. */
 case class AccountUnavailable(account: Account, reason: String) extends Exception(s"$account: $reason")
 
-/** Browser-based consent for one account. */
+/** Browser-based consent. Anyone can complete it; the provider determines who they are. */
 trait AuthProvider:
-  def authorizationUrl(state: String, loginHint: String, redirectUri: String): String
+  def authorizationUrl(state: String, redirectUri: String): String
 
-  /** Exchanges `code`, verifies it belongs to `expectedEmail`, and stores the token only if it does. */
-  def completeAuthorization(code: String, redirectUri: String, expectedEmail: String): IO[Either[String, Account]]
+  /** Exchanges `code`, identifies the account from the provider, and stores its credential. */
+  def completeAuthorization(code: String, redirectUri: String): IO[Either[String, Account]]
 
 case class Provider(calendar: CalendarProvider, auth: AuthProvider)
 

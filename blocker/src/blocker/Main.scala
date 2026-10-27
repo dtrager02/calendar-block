@@ -9,14 +9,13 @@ import java.nio.channels.FileChannel
 import java.nio.file.{Path, Paths}
 import java.nio.file.StandardOpenOption.{CREATE, WRITE}
 import java.time.format.DateTimeFormatter
-import scala.concurrent.duration.*
 
 /** Entry point.
  *
  *  Usage:
  *  {{{
  *    calendar-blocker run [--dry-run] [--config FILE] [--home DIR]
- *    calendar-blocker onboard --email EMAIL [--provider google] [--timeout 1h] [--config FILE] [--home DIR]
+ *    calendar-blocker serve [--provider google] [--config FILE] [--home DIR]
  *    calendar-blocker validate [--config FILE]
  *  }}}
  *
@@ -28,7 +27,7 @@ object Main extends IOApp:
   private val Usage =
     """|Usage:
        |  run [--dry-run] [--config FILE] [--home DIR]
-       |  onboard --email EMAIL [--provider google] [--timeout 1h] [--config FILE] [--home DIR]
+       |  serve [--provider google] [--config FILE] [--home DIR]
        |  validate [--config FILE]""".stripMargin
 
   def run(args: List[String]): IO[ExitCode] =
@@ -41,7 +40,7 @@ object Main extends IOApp:
     val config     = find("--config").map(Paths.get(_)).getOrElse(userConfig.resolve("calendar-blocker-config").resolve("config.yaml"))
     val program = args.headOption match
       case Some("run")      => runCmd(home, config, args.contains("--dry-run"))
-      case Some("onboard")  => onboardCmd(home, config, find("--email"), find("--provider").getOrElse(Account.DefaultProvider), find("--timeout"))
+      case Some("serve")    => serveCmd(home, config, find("--provider").getOrElse(Account.DefaultProvider))
       case Some("validate") => Config.load(config).flatMap(c => IO.println(s"OK: ${c.requests.size} request(s)")).as(ExitCode.Success)
       case _                => Console[IO].errorln(Usage).as(ExitCode.Error)
     program.handleErrorWith {
@@ -52,8 +51,8 @@ object Main extends IOApp:
   /** The only place that knows which providers exist. */
   private def providers(home: Path, store: TokenStore, cfg: AppConfig): IO[Map[String, Provider]] =
     IO.blocking {
-      val google = GoogleClients(home.resolve("credentials.json"), store.providerDir("google").resolve("tokens"))
-      Map("google" -> Provider(GoogleCalendarProvider(google, store, cfg.calendarName, cfg.settings.zone), GoogleAuthProvider(google)))
+      val google = GoogleClients(home.resolve("credentials.json"), store)
+      Map("google" -> Provider(GoogleCalendarProvider(google, store, cfg.calendarName, cfg.settings.zone), GoogleAuthProvider(google, store)))
     }
 
   /** Exclusive lock on `<home>/run.lock` so two runs never plan from the same read. The OS releases it on exit. */
@@ -84,13 +83,13 @@ object Main extends IOApp:
           for
             p    <- IO.fromOption(calendars.get(a.provider))(IllegalStateException(s"no provider for $a"))
             snap <- p.snapshot(a, range, cfg.snapshotOptions(a))
-            calendarId <- (snap.blocksCalendarId, dryRun) match
-              case (None, false) => p.ensureBlocksCalendar(a).map(Some(_))
-              case (id, _)       => IO.pure(id)
+            calendarId <- snap.blocksCalendarId match
+              case None if !dryRun && cfg.organizers(a.email) => p.ensureBlocksCalendar(a).map(Some(_))
+              case id                                         => IO.pure(id)
           yield Some(a -> (calendarId, snap))
         // One person's expired login shouldn't stop scheduling for everyone else; any other error fails the run.
         load.recoverWith { case e: AccountUnavailable =>
-          Console[IO].errorln(s"WARN ${e.getMessage}; their requests are skipped until they onboard again").as(None)
+          Console[IO].errorln(s"WARN ${e.getMessage}; their requests are skipped until they connect again").as(None)
         }
       }
       ok   = loaded.flatten
@@ -124,26 +123,15 @@ object Main extends IOApp:
       s"${plan.patch.size} to update, ${plan.delete.size} to delete"
     (header :: lines).traverse_(IO.println)
 
-  private def onboardCmd(home: Path, config: Path, email: Option[String], provider: String, timeoutArg: Option[String]): IO[ExitCode] =
+  /** Long-running onboarding page. It only stores credentials; the next run creates calendars and books time. */
+  private def serveCmd(home: Path, config: Path, provider: String): IO[ExitCode] =
     val store = TokenStore(home)
     for
-      email    <- IO.fromOption(email)(IllegalArgumentException(s"--email is required\n$Usage"))
-      timeout  <- IO.fromEither(Config.duration(timeoutArg.getOrElse("1h")).leftMap(IllegalArgumentException(_)))
       cfg      <- Config.load(config)
-      base     <- IO.fromOption(cfg.publicBaseUrl)(IllegalArgumentException("publicBaseUrl must be set in config.yaml"))
+      base     <- IO.fromOption(cfg.publicBaseUrl)(IllegalArgumentException("publicBaseUrl must be set in the config"))
       registry <- providers(home, store, cfg)
       p        <- IO.fromOption(registry.get(provider))(IllegalArgumentException(s"unknown provider '$provider'"))
-      acct      = Account(provider, email.trim.toLowerCase)
-      invite    = Onboard.randomToken()
-      // Runs only see accounts with a state file, which ensureBlocksCalendar writes once the calendar exists.
-      onSuccess = (a: Account) => p.calendar.ensureBlocksCalendar(a).void
-      ob <- Onboard.create(p.auth, acct.email, s"$base${Onboard.CallbackPath}", invite, onSuccess)
-      result <- Onboard.serve(ob, cfg.onboardPort).use { _ =>
-        IO.println(s"Send this link to ${acct.email}:\n\n  $base${Onboard.StartPath}?invite=$invite\n") >>
-          IO.println(s"Waiting up to ${timeout.toMinutes} minutes...") >>
-          ob.done.get.timeout(timeout.toMillis.millis).attempt
-      }
-      code <- result match
-        case Right(a) => IO.println(s"Onboarded $a").as(ExitCode.Success)
-        case Left(_)  => Console[IO].errorln("Timed out waiting for the invite to be used.").as(ExitCode.Error)
-    yield code
+      ob       <- Onboard.create(p.auth, s"$base${Onboard.CallbackPath}", a => store.onboard(a) >> IO.println(s"connected $a"))
+      _        <- IO.println(s"Onboarding page at $base, listening on 127.0.0.1:${cfg.onboardPort}")
+      _        <- Onboard.serve(ob, cfg.onboardPort).useForever
+    yield ExitCode.Success

@@ -5,68 +5,70 @@ import munit.CatsEffectSuite
 
 class OnboardTest extends CatsEffectSuite:
 
-  private val invite = "secret-invite"
+  private val alice = Account("google", "alice@x.com")
 
   private class FakeAuth(result: Either[String, Account]) extends AuthProvider:
-    def authorizationUrl(state: String, loginHint: String, redirectUri: String) =
-      s"https://consent.example/?state=$state&hint=$loginHint"
-    def completeAuthorization(code: String, redirectUri: String, expectedEmail: String) = IO.pure(result)
+    def authorizationUrl(state: String, redirectUri: String) = s"https://consent.example/?state=$state"
+    def completeAuthorization(code: String, redirectUri: String) = IO.pure(result)
 
-  private def setup(result: Either[String, Account] = Right(Account("google", "b@x.com"))) =
+  private def setup(result: Either[String, Account] = Right(alice)) =
     for
-      stored <- Ref.of[IO, List[Account]](Nil)
-      ob     <- Onboard.create(FakeAuth(result), "b@x.com", "https://calendar.example.com/callback", invite, a => stored.update(a :: _))
-    yield (ob, stored)
+      connected <- Ref.of[IO, List[Account]](Nil)
+      ob        <- Onboard.create(FakeAuth(result), "https://calendar.example.com/callback", a => connected.update(a :: _))
+    yield (ob, connected)
 
   private def start(ob: Onboard) =
-    ob.handle(Onboard.StartPath, Map("invite" -> invite)).map { r =>
+    ob.handle(Onboard.StartPath, Map.empty).map { r =>
       assertEquals(r.status, 302)
-      r.location.get.split("state=")(1).split("&")(0)
+      r.location.get.split("state=")(1)
     }
 
-  test("valid invite redirects to consent, and the callback stores the account") {
+  test("the landing page offers to connect") {
+    setup().flatMap((ob, _) => ob.handle("/", Map.empty)).map { r =>
+      assertEquals(r.status, 200)
+      assert(r.body.contains("""href="/start""""))
+    }
+  }
+
+  test("anyone can start, and a completed callback connects the account the provider reports") {
     for
-      (ob, stored) <- setup()
-      state        <- start(ob)
-      r            <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
-      accounts     <- stored.get
-      done         <- ob.done.tryGet
-      again        <- ob.handle(Onboard.StartPath, Map("invite" -> invite))
+      (ob, connected) <- setup()
+      state           <- start(ob)
+      r               <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
+      accounts        <- connected.get
     yield
       assertEquals(r.status, 200)
-      assertEquals(accounts, List(Account("google", "b@x.com")))
-      assertEquals(done, Some(Account("google", "b@x.com")))
-      assertEquals(again.status, 410)
+      assert(r.body.contains("Connected as alice@x.com"))
+      assertEquals(accounts, List(alice))
   }
 
-  test("bad invite and forged or replayed state are rejected") {
+  test("forged, missing and replayed states are rejected") {
     for
-      (ob, stored) <- setup()
-      bad          <- ob.handle(Onboard.StartPath, Map("invite" -> "guess"))
-      missing      <- ob.handle(Onboard.StartPath, Map.empty)
-      forged       <- ob.handle(Onboard.CallbackPath, Map("state" -> "forged", "code" -> "c"))
-      state        <- start(ob)
-      _            <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
-      replay       <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
+      (ob, connected) <- setup()
+      forged          <- ob.handle(Onboard.CallbackPath, Map("state" -> "forged", "code" -> "c"))
+      missing         <- ob.handle(Onboard.CallbackPath, Map("code" -> "c"))
+      state           <- start(ob)
+      _               <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
+      replay          <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
+      accounts        <- connected.get
     yield
-      assertEquals(List(bad.status, missing.status, forged.status, replay.status), List(403, 403, 403, 403))
+      assertEquals(List(forged.status, missing.status, replay.status), List(403, 403, 403))
+      assertEquals(accounts.size, 1)
   }
 
-  test("provider rejection (wrong account, missing scopes) stores nothing and allows retry") {
+  test("provider rejection connects nothing and offers a retry, with the message escaped") {
     for
-      (ob, stored) <- setup(Left("You signed in as <evil>@x.com, but this invite is for b@x.com."))
-      state        <- start(ob)
-      r            <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
-      accounts     <- stored.get
-      retry        <- ob.handle(Onboard.StartPath, Map("invite" -> invite))
+      (ob, connected) <- setup(Left("Missing <permission>."))
+      state           <- start(ob)
+      r               <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
+      accounts        <- connected.get
     yield
       assertEquals(r.status, 400)
-      assert(r.body.contains("&lt;evil&gt;"), "messages are HTML-escaped")
+      assert(r.body.contains("Missing &lt;permission&gt;.") && r.body.contains("""href="/start""""))
       assert(accounts.isEmpty)
-      assertEquals(retry.status, 302)
   }
 
-  test("user cancelling on the consent screen is reported") {
+  test("cancelling on the consent screen is reported") {
     for
       (ob, _) <- setup()
       state   <- start(ob)
