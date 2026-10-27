@@ -2,7 +2,7 @@ package blocker.google
 
 import blocker.{Account, AuthProvider, TokenStore}
 import cats.effect.IO
-import com.google.api.client.auth.oauth2.{BearerToken, Credential}
+import com.google.api.client.auth.oauth2.{BearerToken, Credential, TokenResponse}
 import com.google.api.client.googleapis.auth.oauth2.{GoogleAuthorizationCodeFlow, GoogleClientSecrets}
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.http.HttpRequestInitializer
@@ -65,11 +65,17 @@ final class GoogleAuthProvider(clients: GoogleClients) extends AuthProvider:
       else if resp.getRefreshToken == null then
         Left("Google did not return a refresh token. Remove calendar-blocker at myaccount.google.com/permissions.")
       else
-        val temp    = Credential(BearerToken.authorizationHeaderAccessMethod()).setFromTokenResponse(resp)
-        val primary = clients.build(temp).calendars().get("primary").execute().getId
+        val primary = clients.build(GoogleAuthProvider.verificationCredential(resp)).calendars().get("primary").execute().getId
         if !primary.equalsIgnoreCase(expectedEmail) then
           Left(s"You signed in as $primary, but this invite is for $expectedEmail.")
         else
           clients.flow.createAndStoreCredential(resp, expectedEmail)
           Right(Account("google", expectedEmail))
     }
+
+object GoogleAuthProvider:
+  /** Access-token-only credential for checking whose account this is before anything is stored.
+   *  A bare `Credential` rejects refresh tokens, and none is needed for this single call.
+   */
+  private[google] def verificationCredential(resp: TokenResponse): Credential =
+    Credential(BearerToken.authorizationHeaderAccessMethod()).setAccessToken(resp.getAccessToken)
