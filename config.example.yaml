@@ -23,6 +23,8 @@ requests:
 
   - id: band-practice
     title: Band practice
+    description: Bring your own picks.   # optional
+    location: Studio 4                   # optional
     priority: 8
     attendees: [me@gmail.com, b@gmail.com, c@gmail.com]   # first is the organizer
     recurrence: weekly

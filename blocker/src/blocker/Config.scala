@@ -32,6 +32,8 @@ object Config:
   private case class RawRequest(
       id: String,
       title: Option[String],
+      description: Option[String],
+      location: Option[String],
       priority: Int,
       attendees: List[String] = Nil,
       recurrence: String,
@@ -129,7 +131,9 @@ object Config:
       duration,
       windows,
       if strategies.isEmpty then Map(Strategy.PreferSoonest -> 1.0) else strategies.toMap,
-      order
+      order,
+      r.description.map(_.trim).filter(_.nonEmpty),
+      r.location.map(_.trim).filter(_.nonEmpty)
     )
 
   private def validate(r: RawConfig): Either[String, AppConfig] =

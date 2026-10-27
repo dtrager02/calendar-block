@@ -1,6 +1,6 @@
 # calendar-blocker
 
-A cron-run script that reads the Google Calendars of everyone who has onboarded, including the calendars they subscribe to. It then places blocks of time for the activities declared in `config.yaml`, on a dedicated **Auto Blocks** calendar it creates for each person.
+A cron-run script that reads the Google Calendars of everyone who has onboarded, including the calendars they subscribe to. It then places blocks of time for the activities declared in a shared `config.yaml` (in its own repo), on a dedicated **Auto Blocks** calendar it creates for each person.
 
 - **Priorities.** Requests share one priority scale. A request can take a slot held by a strictly lower-priority block. Events not managed by the app are never moved and outrank every request.
 - **Joint requests.** A request with several attendees needs a slot that is free for every one of them. It becomes a single event on the organizer's Auto Blocks calendar, with Google invites sent to the other attendees.
@@ -13,6 +13,10 @@ A cron-run script that reads the Google Calendars of everyone who has onboarded,
   - Blocks in later weeks are re-optimized on every run. A moved block is patched in place.
   - Blocks that have already started are never touched.
 - **Removing a request.** Deleting a request from `config.yaml` deletes every one of its blocks that hasn't started yet, however far out. For joint blocks, Google removes the event from every guest's calendar too.
+- **Event details.** Each request's `title`, `description` and `location` are declarative. When they change, every future block of that request is updated in place on the next run.
+  - Each event stores a fingerprint of its details, so changes are found without comparing content, and unchanged events cost no API calls.
+  - A move and a details change on the same event go out as one update.
+  - Joint-block guests get an update email.
 - **Declines.** If a guest declines a joint block, the app deletes it and doesn't reschedule that period.
 - **No slot.** A request that can't fit is skipped.
 
@@ -40,20 +44,23 @@ Use the project that owns the OAuth client.
 5. **Clients:** open a client of type **Web application**. Under **Authorized redirect URIs**, add `https://calendar.jeopardy.fit/callback`, which is `publicBaseUrl` + `/callback`. Download the JSON.
 
 ### Server
-Everything lives in one home directory, `~/.config/calendar-blocker/` by default (the home directory of whoever runs the jar). Pass `--home DIR` to use another location.
+The app reads from two directories, both under the home directory of whoever runs the jar:
 
-| File | Contents |
-|---|---|
-| `config.yaml` | Your configuration. |
-| `credentials.json` | The OAuth client JSON downloaded from Google. |
-| `google/` | Written by the app: tokens and per-user state. |
+| Location | Contents | Override |
+|---|---|---|
+| `~/.config/calendar-blocker-config/config.yaml` | The configuration: a checkout of the **public** config repo, [dtrager02/calendar-blocker-config](https://github.com/dtrager02/calendar-blocker-config), where friends propose changes by pull request. | `--config FILE` |
+| `~/.config/calendar-blocker/credentials.json` | The OAuth client JSON downloaded from Google. **Private.** | `--home DIR` |
+| `~/.config/calendar-blocker/google/` | Written by the app: tokens and per-user state. **Private.** | `--home DIR` |
+
+Never put secrets in the config repo.
 
 ```sh
 ./mill blocker.assembly                       # builds out/blocker/assembly.dest/out.jar (needs JDK 17+)
+git clone https://github.com/dtrager02/calendar-blocker-config.git ~/.config/calendar-blocker-config
 mkdir -p ~/.config/calendar-blocker && chmod 700 ~/.config/calendar-blocker
 cp client_secret_*.json ~/.config/calendar-blocker/credentials.json
 chmod 600 ~/.config/calendar-blocker/credentials.json
-cp config.example.yaml ~/.config/calendar-blocker/config.yaml   # then edit
+java -jar out/blocker/assembly.dest/out.jar validate   # checks the config
 ```
 
 ### Exposing onboarding (Cloudflare Tunnel)
@@ -67,7 +74,7 @@ cp config.example.yaml ~/.config/calendar-blocker/config.yaml   # then edit
    - Domain: `jeopardy.fit`
    - Path: leave empty
    - Service: **HTTP**, `localhost:8735`
-3. Set `publicBaseUrl: https://calendar.jeopardy.fit` in `config.yaml`.
+3. Make sure `publicBaseUrl: https://calendar.jeopardy.fit` is set in the config repo's `config.yaml`.
 
 While no `onboard` command is running, the hostname shows a Cloudflare error page. That's expected.
 
@@ -84,14 +91,20 @@ java -jar out/blocker/assembly.dest/out.jar onboard --email b@gmail.com [--timeo
 ```cron
 0 * * * * JAVA=/usr/bin/java /path/to/calendar-blocker/run.sh >> /path/to/calendar-blocker.log 2>&1
 ```
-`run.sh --dry-run` prints the plan without changing anything. A run exits non-zero if any calendar operation failed.
+- **Each run pulls first.** `run.sh` runs `git pull --ff-only` in the config checkout, so merged pull requests take effect on the next run. If the pull fails, it warns and uses the current checkout.
+- **Different checkout location:** set `CONFIG_REPO`.
+- **Dry run:** `run.sh --dry-run` prints the plan without changing anything.
+- **Exit code:** a run exits non-zero if any calendar operation failed.
 
 ## Configuration
-See [`config.example.yaml`](config.example.yaml). Every key is validated, and unknown keys are rejected.
+The live config is in [dtrager02/calendar-blocker-config](https://github.com/dtrager02/calendar-blocker-config). [`config.example.yaml`](config.example.yaml) here documents every option.
+
+Every key is validated, and unknown keys are rejected. Run `validate --config FILE` to check a file locally; the config repo runs the same check on every pull request.
 
 | Request field | Meaning |
 |---|---|
 | `id` | Stable identifier that links existing blocks to the request. Renaming it re-creates the blocks. |
+| `title`, `description`, `location` | Event details. `title` defaults to `id`; the other two are optional. Editing them updates every future block of the request in place on the next run. |
 | `priority` | Integer, higher wins. Ties are broken by order in the file. |
 | `attendees` | Emails, the first being the organizer. Defaults to `owner`. Every attendee must be onboarded, or the request is skipped. |
 | `recurrence` | `daily`, `weekly` (weeks begin on `weekStart`) or `once` (requires `between: {from, to}`). |

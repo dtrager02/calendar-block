@@ -36,7 +36,8 @@ class SchedulerTest extends FunSuite:
       organizer,
       r.emails,
       i,
-      declined
+      declined,
+      Some(r.details.fingerprint)
     )
 
   private def plan(
@@ -122,7 +123,7 @@ class SchedulerTest extends FunSuite:
     val nextWk  = block(r, "week-of-2026-11-02", iv("2026-11-07T12:00", "2026-11-07T14:00"))
     val p       = plan(List(r), blocks = List(thisWk, nextWk))
     assertEquals(p.keep, List(thisWk))
-    assertEquals(p.patch, List(nextWk -> iv("2026-11-07T10:00", "2026-11-07T12:00")))
+    assertEquals(p.patch, List(BlockUpdate(nextWk, iv("2026-11-07T10:00", "2026-11-07T12:00"), r.details)))
     assert(p.delete.isEmpty)
   }
 
@@ -130,7 +131,7 @@ class SchedulerTest extends FunSuite:
     val r = req("gaming", 5, windows = List(window("10:00", "14:00")))
     val b = block(r, "once", iv("2026-10-31T12:00", "2026-10-31T14:00"))
     val p = plan(List(r), busy = Map("a@x" -> List(iv("2026-10-31T13:00", "2026-10-31T13:30"))), blocks = List(b))
-    assertEquals(p.patch, List(b -> slot))
+    assertEquals(p.patch, List(BlockUpdate(b, slot, r.details)))
   }
 
   test("started blocks are untouched and satisfy their period") {
@@ -166,6 +167,25 @@ class SchedulerTest extends FunSuite:
     val p     = plan(List(joint), blocks = List(own, guest))
     assertEquals(p.keep, List(own))
     assert(p.isNoop)
+  }
+
+  test("changed details update every future occurrence in place, including sticky ones, and nothing else") {
+    val r       = req("gaming", 5, recurrence = Recurrence.Weekly, between = None)
+    val started = block(r, "week-of-2026-10-26", iv("2026-10-26T07:00", "2026-10-26T09:00"))
+    val weeks   = List("2026-11-02" -> "2026-11-07", "2026-11-09" -> "2026-11-14", "2026-11-16" -> "2026-11-21")
+    val future  = weeks.map((w, d) => block(r, s"week-of-$w", iv(s"${d}T10:00", s"${d}T12:00")))
+    val edited  = r.copy(title = "Gaming night", description = Some("Discord"), location = Some("Den"))
+    val p       = plan(List(edited), blocks = started :: future)
+    assertEquals(p.patch, future.map(b => BlockUpdate(b, b.interval, edited.details)))
+    assertEquals(p.keep, List(started))
+    assert(p.create.forall(_.tag.periodKey == "week-of-2026-11-23") && p.delete.isEmpty)
+    assert(plan(List(r), blocks = started :: future).patch.isEmpty, "unchanged details need no calls")
+  }
+
+  test("blocks without a stored fingerprint are brought up to date") {
+    val r = req("gaming", 5)
+    val b = block(r, "once", slot).copy(detailsFingerprint = None)
+    assertEquals(plan(List(r), blocks = List(b)).patch, List(BlockUpdate(b, slot, r.details)))
   }
 
   test("one-time requests beyond the horizon are placed") {

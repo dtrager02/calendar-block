@@ -105,11 +105,13 @@ object Scheduler:
             reserve(o, best)
 
     val create = ListBuffer.empty[Placement]
-    val patch  = ListBuffer.empty[(Block, Interval)]
+    val patch  = ListBuffer.empty[BlockUpdate]
     results.values.foreach { p =>
       future.remove(p.tag) match
         case Some(b) if b.attendees == p.request.emails && b.organizer == p.request.attendees.head =>
-          if b.interval == p.interval then keep += b else patch += (b -> p.interval)
+          val details = p.request.details
+          if b.interval == p.interval && b.detailsFingerprint.contains(details.fingerprint) then keep += b
+          else patch += BlockUpdate(b, p.interval, details)
         case Some(b) =>
           delete += b; create += p
         case None => create += p

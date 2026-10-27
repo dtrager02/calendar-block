@@ -15,6 +15,8 @@ class ConfigTest extends FunSuite:
        |requests:
        |  - id: gaming
        |    title: Gaming
+       |    description: "Discord: #gaming"
+       |    location: "  "
        |    priority: 5
        |    recurrence: weekly
        |    duration: 2h
@@ -43,6 +45,7 @@ class ConfigTest extends FunSuite:
     assertEquals(gaming.windows.head.days, Set(DayOfWeek.FRIDAY, DayOfWeek.SATURDAY, DayOfWeek.SUNDAY))
     assertEquals(gaming.windows.head.from, LocalTime.of(18, 0))
     assertEquals(gaming.strategies, Map(Strategy.MinimalGaps -> 2.0, Strategy.PreferSoonest -> 1.0))
+    assertEquals(gaming.details, EventDetails("Gaming", Some("Discord: #gaming"), None))
     assertEquals(band.title, "band")
     assertEquals(band.duration, Duration.ofMinutes(90))
     assertEquals(band.attendees.map(_.email), List("me@gmail.com", "b@gmail.com"))

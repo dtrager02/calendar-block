@@ -5,7 +5,7 @@ import cats.effect.IO
 import cats.effect.std.Console
 import cats.syntax.all.*
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
-import com.google.api.client.util.DateTime
+import com.google.api.client.util.{Data, DateTime}
 import com.google.api.services.calendar.Calendar
 import com.google.api.services.calendar.model.{Event, EventAttendee, EventDateTime, Calendar as GCalendar}
 
@@ -51,35 +51,14 @@ final class GoogleCalendarProvider(clients: GoogleClients, store: TokenStore, ca
   def create(calendarId: String, b: NewBlock): IO[BlockRef] =
     clients.calendar(b.organizer).flatMap { cal =>
       IO.blocking {
-        val attendees = b.organizer.email :: b.guests.map(_.email)
-        val ev = Event()
-          .setSummary(b.title)
-          .setDescription(s"Managed by calendar-blocker (request '${b.tag.requestId}').")
-          .setStart(dateTime(b.interval.start))
-          .setEnd(dateTime(b.interval.end))
-          .setExtendedProperties(
-            Event.ExtendedProperties().setShared(
-              Map(
-                TagKey        -> "1",
-                RequestKey    -> b.tag.requestId,
-                PeriodKey     -> b.tag.periodKey,
-                OrganizerKey  -> b.organizer.toString,
-                AttendeesKey  -> attendees.mkString(",")
-              ).asJava
-            )
-          )
-        if b.guests.nonEmpty then ev.setAttendees(b.guests.map(g => EventAttendee().setEmail(g.email)).asJava)
-        val created = cal.events().insert(calendarId, ev).setSendUpdates(if b.guests.isEmpty then "none" else "all").execute()
+        val created = cal.events().insert(calendarId, toEvent(b)).setSendUpdates(if b.guests.isEmpty then "none" else "all").execute()
         BlockRef(b.organizer, calendarId, created.getId)
       }
     }
 
-  def patch(ref: BlockRef, interval: Interval): IO[Unit] =
+  def update(ref: BlockRef, interval: Interval, details: EventDetails): IO[Unit] =
     clients.calendar(ref.account).flatMap { cal =>
-      IO.blocking {
-        val ev = Event().setStart(dateTime(interval.start)).setEnd(dateTime(interval.end))
-        cal.events().patch(ref.calendarId, ref.eventId, ev).setSendUpdates("all").execute()
-      }.void
+      IO.blocking(cal.events().patch(ref.calendarId, ref.eventId, toPatch(interval, details)).setSendUpdates("all").execute()).void
     }
 
   def delete(ref: BlockRef): IO[Unit] =
@@ -130,6 +109,8 @@ object GoogleCalendarProvider:
   private[google] val PeriodKey    = "calblockPeriod"
   private[google] val OrganizerKey = "calblockOrganizer"
   private[google] val AttendeesKey = "calblockAttendees"
+  private[google] val DetailsKey   = "calblockDetails"
+  private val Footer               = "Managed by calendar-blocker."
 
   /** Tagged events become blocks; other events that occupy time become bare intervals; the rest is dropped. */
   private[google] def classify(acct: Account, calendarId: String, e: Event, opts: SnapshotOptions): Option[Either[Interval, Block]] =
@@ -152,13 +133,46 @@ object GoogleCalendarProvider:
           organizer,
           shared.get(AttendeesKey).fold(Set(organizer.email))(_.split(",").map(_.trim.toLowerCase).toSet),
           i,
-          attendees.filter(_.getResponseStatus == "declined").flatMap(a => Option(a.getEmail)).map(_.toLowerCase).toSet
+          attendees.filter(_.getResponseStatus == "declined").flatMap(a => Option(a.getEmail)).map(_.toLowerCase).toSet,
+          shared.get(DetailsKey)
         )
       )
     else if e.getTransparency == "transparent" then None
     else if attendees.exists(a => a.getSelf == true && a.getResponseStatus == "declined") then None
     else if allDay && !opts.allDayEventsBusy then None
     else interval.map(Left(_))
+
+  private[google] def toEvent(b: NewBlock): Event =
+    val ev = withDetails(Event(), b.details)
+      .setStart(dateTime(b.interval.start))
+      .setEnd(dateTime(b.interval.end))
+      .setExtendedProperties(
+        Event.ExtendedProperties().setShared(
+          Map(
+            TagKey       -> "1",
+            RequestKey   -> b.tag.requestId,
+            PeriodKey    -> b.tag.periodKey,
+            OrganizerKey -> b.organizer.toString,
+            AttendeesKey -> (b.organizer.email :: b.guests.map(_.email)).mkString(","),
+            DetailsKey   -> b.details.fingerprint
+          ).asJava
+        )
+      )
+    if b.guests.nonEmpty then ev.setAttendees(b.guests.map(g => EventAttendee().setEmail(g.email)).asJava)
+    ev
+
+  /** Patch body for an existing block. Shared properties are merged by key, so only the fingerprint is sent. */
+  private[google] def toPatch(interval: Interval, details: EventDetails): Event =
+    withDetails(Event(), details, patching = true)
+      .setStart(dateTime(interval.start))
+      .setEnd(dateTime(interval.end))
+      .setExtendedProperties(Event.ExtendedProperties().setShared(Map(DetailsKey -> details.fingerprint).asJava))
+
+  /** In a patch, an absent field means "leave unchanged", so a removed location must be sent as an explicit null. */
+  private def withDetails(ev: Event, d: EventDetails, patching: Boolean = false): Event =
+    ev.setSummary(d.title)
+      .setDescription(d.description.fold(Footer)(text => s"$text\n\n$Footer"))
+      .setLocation(d.location.getOrElse(if patching then Data.NULL_STRING else null))
 
   private def instant(t: EventDateTime, zone: ZoneId): Option[Instant] =
     Option(t).flatMap { t =>

@@ -20,7 +20,8 @@ trait CalendarProvider:
   /** Creates `b` on the organizer's blocks calendar and invites its guests. */
   def create(calendarId: String, b: NewBlock): IO[BlockRef]
 
-  def patch(ref: BlockRef, interval: Interval): IO[Unit]
+  /** Sets the event's time and details. The provider must also store `details.fingerprint` for the next read. */
+  def update(ref: BlockRef, interval: Interval, details: EventDetails): IO[Unit]
   def delete(ref: BlockRef): IO[Unit]
 
 /** Browser-based consent for one account. */
@@ -45,14 +46,16 @@ object Executor:
       op.as(0).handleErrorWith(e => Console[IO].errorln(s"FAILED $desc: ${e.getMessage}").as(1))
 
     val deletes = plan.delete.map(b => attempt(s"delete ${b.tag}")(provider(b.ref.account).flatMap(_.delete(b.ref))))
-    val patches = plan.patch.map((b, i) => attempt(s"patch ${b.tag}")(provider(b.ref.account).flatMap(_.patch(b.ref, i))))
+    val patches = plan.patch.map(u =>
+      attempt(s"update ${u.block.tag}")(provider(u.block.ref.account).flatMap(_.update(u.block.ref, u.interval, u.details)))
+    )
     val creates = plan.create.map { p =>
       val organizer = p.request.attendees.head
       attempt(s"create ${p.tag}") {
         for
           calendarId <- IO.fromOption(blocksCalendarIds.get(organizer))(IllegalStateException(s"no blocks calendar for $organizer"))
           cal        <- provider(organizer)
-          _          <- cal.create(calendarId, NewBlock(p.tag, p.request.title, p.interval, organizer, p.request.attendees.tail))
+          _          <- cal.create(calendarId, NewBlock(p.tag, p.request.details, p.interval, organizer, p.request.attendees.tail))
         yield ()
       }
     }

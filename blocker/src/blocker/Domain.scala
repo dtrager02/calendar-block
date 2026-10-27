@@ -1,5 +1,7 @@
 package blocker
 
+import java.nio.charset.StandardCharsets.UTF_8
+import java.security.MessageDigest
 import java.time.{DayOfWeek, Duration, Instant, LocalDate, LocalTime, ZoneId}
 
 /** A person on a specific calendar provider. The scheduler identifies people by email. */
@@ -31,6 +33,13 @@ case class BlockTag(requestId: String, periodKey: String)
 /** Opaque, provider-issued handle to one copy of an event on one account's calendar. */
 case class BlockRef(account: Account, calendarId: String, eventId: String)
 
+/** User-facing event content, declared per request. */
+case class EventDetails(title: String, description: Option[String], location: Option[String]):
+  /** Stable digest stored on each event, so changed details are detected without reading the content back. */
+  def fingerprint: String =
+    val bytes = MessageDigest.getInstance("SHA-256").digest(List(title, description.orNull, location.orNull).mkString("\u0000").getBytes(UTF_8))
+    bytes.take(12).map(b => f"$b%02x").mkString
+
 /** An app-managed event as read from a calendar. `attendees` includes the organizer. */
 case class Block(
     ref: BlockRef,
@@ -38,15 +47,25 @@ case class Block(
     organizer: Account,
     attendees: Set[String],
     interval: Interval,
-    declinedBy: Set[String]
+    declinedBy: Set[String],
+    detailsFingerprint: Option[String]
 )
+
+/** Brings an existing block to the planned time and the request's current details in one provider call. */
+case class BlockUpdate(block: Block, interval: Interval, details: EventDetails)
 
 /** What one account's calendars look like: unmanaged busy time plus every tagged event seen. */
 case class Snapshot(busy: List[Interval], blocks: List[Block])
 
 case class SnapshotOptions(zone: ZoneId, allDayEventsBusy: Boolean, excludeCalendars: Set[String])
 
-case class NewBlock(tag: BlockTag, title: String, interval: Interval, organizer: Account, guests: List[Account])
+case class NewBlock(
+    tag: BlockTag,
+    details: EventDetails,
+    interval: Interval,
+    organizer: Account,
+    guests: List[Account]
+)
 
 enum Recurrence:
   case Daily, Weekly, Once
@@ -67,9 +86,12 @@ case class Request(
     duration: Duration,
     windows: List[TimeWindow],
     strategies: Map[Strategy, Double],
-    order: Int
+    order: Int,
+    description: Option[String] = None,
+    location: Option[String] = None
 ):
-  def emails: Set[String] = attendees.map(_.email).toSet
+  def emails: Set[String]     = attendees.map(_.email).toSet
+  def details: EventDetails = EventDetails(title, description, location)
 
 case class Settings(zone: ZoneId, horizonDays: Int, weekStart: DayOfWeek, slotStep: Duration)
 
@@ -78,7 +100,7 @@ case class Placement(request: Request, tag: BlockTag, interval: Interval)
 case class Plan(
     keep: List[Block],
     create: List[Placement],
-    patch: List[(Block, Interval)],
+    patch: List[BlockUpdate],
     delete: List[Block],
     unplaced: List[BlockTag],
     skippedRequests: List[String]

@@ -41,14 +41,37 @@ class ClassifyTest extends FunSuite:
     val tagged = event
       .setExtendedProperties(Event.ExtendedProperties().setShared(Map(
         TagKey -> "1", RequestKey -> "band", PeriodKey -> "once",
-        OrganizerKey -> "google:a@x.com", AttendeesKey -> "a@x.com,b@x.com"
+        OrganizerKey -> "google:a@x.com", AttendeesKey -> "a@x.com,b@x.com", DetailsKey -> "fp"
       ).asJava))
       .setAttendees(List(EventAttendee().setEmail("B@x.com").setResponseStatus("declined")).asJava)
     assertEquals(
       classify(acct, "primary", tagged, opts),
       Some(Right(Block(
         BlockRef(acct, "primary", "ev"), BlockTag("band", "once"), Account("google", "a@x.com"),
-        Set("a@x.com", "b@x.com"), Interval(s, e), Set("b@x.com")
+        Set("a@x.com", "b@x.com"), Interval(s, e), Set("b@x.com"), Some("fp")
       )))
     )
+  }
+
+  private val details = EventDetails("Band", Some("Bring picks"), Some("Studio 4"))
+  private val newBlock = NewBlock(BlockTag("band", "once"), details, Interval(s, e), Account("google", "a@x.com"), List(Account("google", "b@x.com")))
+
+  test("created events carry the details, a fingerprint, and the guests") {
+    val ev = toEvent(newBlock)
+    assertEquals(ev.getSummary, "Band")
+    assertEquals(ev.getDescription, "Bring picks\n\nManaged by calendar-blocker.")
+    assertEquals(ev.getLocation, "Studio 4")
+    assertEquals(ev.getExtendedProperties.getShared.get(DetailsKey), details.fingerprint)
+    assertEquals(ev.getAttendees.asScala.map(_.getEmail).toList, List("b@x.com"))
+    val bare = toEvent(newBlock.copy(details = EventDetails("Band", None, None)))
+    assertEquals(bare.getDescription, "Managed by calendar-blocker.")
+    assertEquals(bare.getLocation, null)
+  }
+
+  test("patches set time and details in one body and explicitly clear a removed location") {
+    val patch = toPatch(Interval(s, e), EventDetails("Band", None, None))
+    assertEquals(patch.getStart.getDateTime.getValue, s.toEpochMilli)
+    assertEquals(patch.getSummary, "Band")
+    assert(com.google.api.client.util.Data.isNull(patch.getLocation), "location must be an explicit JSON null")
+    assertEquals(patch.getExtendedProperties.getShared.asScala.toMap, Map(DetailsKey -> EventDetails("Band", None, None).fingerprint))
   }
