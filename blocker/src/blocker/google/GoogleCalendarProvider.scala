@@ -39,8 +39,10 @@ final class GoogleCalendarProvider(clients: GoogleClients, store: TokenStore, ca
   def snapshot(acct: Account, range: Interval, opts: SnapshotOptions): IO[Snapshot] =
     for
       cal       <- clients.calendar(acct)
-      ids       <- IO.blocking(calendarIds(cal)).map(_.filterNot(opts.excludeCalendars))
-      perCal    <- ids.traverse(cid => IO.blocking(events(cal, cid, range, acct, opts)).attempt)
+      blocksCal <- store.read(acct).map(_.flatMap(_.blocksCalendarId))
+      ids       <- IO.blocking(calendarIds(cal)).map(_.filterNot(opts.excludeCalendars).filterNot(blocksCal.contains))
+      reads      = blocksCal.map(_ -> None).toList ++ ids.map(_ -> Some(range.end))
+      perCal    <- reads.traverse((cid, end) => IO.blocking(events(cal, cid, range.start, end, acct, opts)).attempt)
       unreadable = perCal.count(_.isLeft)
       _         <- Console[IO].errorln(s"WARN $acct: skipped $unreadable unreadable calendar(s)").whenA(unreadable > 0)
       entries    = perCal.collect { case Right(es) => es }.flatten
@@ -103,15 +105,15 @@ final class GoogleCalendarProvider(clients: GoogleClients, store: TokenStore, ca
     do ()
     out.toList
 
-  private def events(cal: Calendar, calendarId: String, range: Interval, acct: Account, opts: SnapshotOptions) =
+  private def events(cal: Calendar, calendarId: String, start: Instant, end: Option[Instant], acct: Account, opts: SnapshotOptions) =
     val out           = ListBuffer.empty[Either[Interval, Block]]
     var token: String = null
     while
       val page = cal
         .events()
         .list(calendarId)
-        .setTimeMin(DateTime(range.start.toEpochMilli))
-        .setTimeMax(DateTime(range.end.toEpochMilli))
+        .setTimeMin(DateTime(start.toEpochMilli))
+        .setTimeMax(end.map(e => DateTime(e.toEpochMilli)).orNull)
         .setSingleEvents(true)
         .setMaxResults(2500)
         .setPageToken(token)

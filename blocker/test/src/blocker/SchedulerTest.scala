@@ -149,9 +149,15 @@ class SchedulerTest extends FunSuite:
     assert(p.create.isEmpty)
   }
 
-  test("blocks for requests removed from the config are deleted") {
-    val b = block(req("gone", 5), "once", slot)
-    assertEquals(plan(Nil, blocks = List(b)).delete, List(b))
+  test("removing a request deletes all its future blocks, once per event, however far out") {
+    val gone    = joint.copy(id = "gone", recurrence = Recurrence.Weekly, between = None)
+    val started = block(gone, "week-of-2026-10-26", iv("2026-10-26T07:00", "2026-10-26T09:00"))
+    val next    = block(gone, "week-of-2026-11-02", iv("2026-11-07T10:00", "2026-11-07T12:00"))
+    val farOut  = block(gone, "week-of-2027-06-07", iv("2027-06-12T10:00", "2027-06-12T12:00"))
+    val guest   = block(gone, "week-of-2026-11-02", next.interval, owner = Some("b@x"))
+    val p       = plan(Nil, blocks = List(started, next, farOut, guest))
+    assertEquals(p.delete.toSet, Set(next, farOut))
+    assertEquals(p.keep, List(started))
   }
 
   test("guest copies of a joint event are neither busy time nor duplicates") {

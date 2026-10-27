@@ -11,7 +11,10 @@ trait CalendarProvider:
   /** Returns the ID of the account's app-owned blocks calendar, creating it if missing. */
   def ensureBlocksCalendar(acct: Account): IO[String]
 
-  /** Unmanaged busy time across all of the account's calendars, plus every tagged event seen. */
+  /** Unmanaged busy time across all of the account's calendars, plus every tagged event seen.
+   *  The account's blocks calendar must be read with no end bound, so blocks of requests removed from the
+   *  config are found and deleted however far in the future they are.
+   */
   def snapshot(acct: Account, range: Interval, opts: SnapshotOptions): IO[Snapshot]
 
   /** Creates `b` on the organizer's blocks calendar and invites its guests. */

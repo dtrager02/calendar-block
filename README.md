@@ -12,6 +12,7 @@ A cron-run script that reads the Google Calendars of everyone who has onboarded,
   - Blocks in the current week stay put unless an external event now conflicts with them, or a higher-priority request has no other free slot.
   - Blocks in later weeks are re-optimized on every run. A moved block is patched in place.
   - Blocks that have already started are never touched.
+- **Removing a request.** Deleting a request from `config.yaml` deletes every one of its blocks that hasn't started yet, however far out. For joint blocks, Google removes the event from every guest's calendar too.
 - **Declines.** If a guest declines a joint block, the app deletes it and doesn't reschedule that period.
 - **No slot.** A request that can't fit is skipped.
 
@@ -35,10 +36,18 @@ Use the project that owns the OAuth client.
 3. **Google Auth Platform → Audience:** set User type to **External**, then click **Publish app** so the status reads **In production**.
    - In "Testing", refresh tokens expire after 7 days and only listed test users can sign in.
    - Unverified apps allow up to 100 users. Each person sees "Google hasn't verified this app" and clicks **Advanced → Go to … (unsafe)**.
-4. **Google Auth Platform → Branding → Authorized domains:** add your domain.
-5. **Clients:** open a client of type **Web application**. Under **Authorized redirect URIs**, add `https://<your-domain>/calblock/callback`. Download the JSON.
+4. **Google Auth Platform → Branding → Authorized domains:** add `jeopardy.fit`. This covers its subdomains.
+5. **Clients:** open a client of type **Web application**. Under **Authorized redirect URIs**, add `https://calendar.jeopardy.fit/callback`, which is `publicBaseUrl` + `/callback`. Download the JSON.
 
 ### Server
+Everything lives in one home directory, `~/.config/calendar-blocker/` by default (the home directory of whoever runs the jar). Pass `--home DIR` to use another location.
+
+| File | Contents |
+|---|---|
+| `config.yaml` | Your configuration. |
+| `credentials.json` | The OAuth client JSON downloaded from Google. |
+| `google/` | Written by the app: tokens and per-user state. |
+
 ```sh
 ./mill blocker.assembly                       # builds out/blocker/assembly.dest/out.jar (needs JDK 17+)
 mkdir -p ~/.config/calendar-blocker && chmod 700 ~/.config/calendar-blocker
@@ -46,14 +55,21 @@ cp client_secret_*.json ~/.config/calendar-blocker/credentials.json
 chmod 600 ~/.config/calendar-blocker/credentials.json
 cp config.example.yaml ~/.config/calendar-blocker/config.yaml   # then edit
 ```
-Route `/calblock/*` from your HTTPS reverse proxy to the onboarding port (default 8735), preserving the path:
-```
-# Caddy
-reverse_proxy /calblock/* 127.0.0.1:8735
-# nginx
-location /calblock/ { proxy_pass http://127.0.0.1:8735; }
-```
-The listener runs only while an `onboard` command is waiting. At all other times the proxy returns 502.
+
+### Exposing onboarding (Cloudflare Tunnel)
+`onboard` starts a small HTTP listener on `127.0.0.1:<onboardPort>` (default 8735). It runs only while an invite is pending, and it never listens on a public interface. A Cloudflare Tunnel gives it a public HTTPS hostname without opening any ports:
+
+1. In the Cloudflare dashboard, go to **Zero Trust → Networks → Tunnels**.
+   - If you already have a tunnel for this server, open it.
+   - Otherwise, click **Create a tunnel → Cloudflared** and run the install command it shows on the server.
+2. Add a **Public hostname**:
+   - Subdomain: `calendar`
+   - Domain: `jeopardy.fit`
+   - Path: leave empty
+   - Service: **HTTP**, `localhost:8735`
+3. Set `publicBaseUrl: https://calendar.jeopardy.fit` in `config.yaml`.
+
+While no `onboard` command is running, the hostname shows a Cloudflare error page. That's expected.
 
 ### Onboarding a person (yourself first)
 ```sh
