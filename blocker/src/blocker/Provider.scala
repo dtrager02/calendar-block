@@ -32,7 +32,7 @@ trait AuthProvider:
   /** Exchanges `code`, identifies the account from the provider, and stores its credential. */
   def completeAuthorization(code: String, redirectUri: String): IO[Either[String, Account]]
 
-case class Provider(calendar: CalendarProvider, auth: AuthProvider)
+case class Provider(calendar: CalendarProvider, auth: AuthProvider, displayName: String = "")
 
 object Executor:
 

@@ -66,7 +66,7 @@ object TokenStore:
       Files.createDirectory(abs, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")))
 
   /** Writes an owner-only temp file next to `f`, then renames it over `f` in one step. */
-  private def writeAtomically(f: Path, content: String): Unit =
+  private[blocker] def writeAtomically(f: Path, content: String): Unit =
     privateDirs(f.getParent)
     val tmp = Files.createTempFile(f.getParent, ".tmp-", "", PosixFilePermissions.asFileAttribute(OwnerOnly))
     Files.writeString(tmp, content)

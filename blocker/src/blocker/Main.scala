@@ -40,7 +40,7 @@ object Main extends IOApp:
     val config     = find("--config").map(Paths.get(_)).getOrElse(userConfig.resolve("calendar-blocker-config").resolve("config.yaml"))
     val program = args.headOption match
       case Some("run")      => runCmd(home, config, args.contains("--dry-run"))
-      case Some("serve")    => serveCmd(home, config, find("--provider").getOrElse(Account.DefaultProvider))
+      case Some("serve")    => serveCmd(home, config, find("--provider"))
       case Some("validate") => Config.load(config).flatMap(c => IO.println(s"OK: ${c.requests.size} request(s)")).as(ExitCode.Success)
       case _                => Console[IO].errorln(Usage).as(ExitCode.Error)
     program.handleErrorWith {
@@ -52,7 +52,7 @@ object Main extends IOApp:
   private def providers(home: Path, store: TokenStore, cfg: AppConfig): IO[Map[String, Provider]] =
     IO.blocking {
       val google = GoogleClients(home.resolve("credentials.json"), store)
-      Map("google" -> Provider(GoogleCalendarProvider(google, store, cfg.calendarName, cfg.settings.zone), GoogleAuthProvider(google, store)))
+      Map("google" -> Provider(GoogleCalendarProvider(google, store, cfg.calendarName, cfg.settings.zone), GoogleAuthProvider(google, store), "Google"))
     }
 
   /** Exclusive lock on `<home>/run.lock` so two runs never plan from the same read. The OS releases it on exit. */
@@ -123,15 +123,19 @@ object Main extends IOApp:
       s"${plan.patch.size} to update, ${plan.delete.size} to delete"
     (header :: lines).traverse_(IO.println)
 
-  /** Long-running onboarding page. It only stores credentials; the next run creates calendars and books time. */
-  private def serveCmd(home: Path, config: Path, provider: String): IO[ExitCode] =
+  private def serveCmd(home: Path, config: Path, provider: Option[String]): IO[ExitCode] =
     val store = TokenStore(home)
     for
       cfg      <- Config.load(config)
       base     <- IO.fromOption(cfg.publicBaseUrl)(IllegalArgumentException("publicBaseUrl must be set in the config"))
       registry <- providers(home, store, cfg)
-      p        <- IO.fromOption(registry.get(provider))(IllegalArgumentException(s"unknown provider '$provider'"))
-      ob       <- Onboard.create(p.auth, s"$base${Onboard.CallbackPath}", a => store.onboard(a) >> IO.println(s"connected $a"))
+      _        <- IO.raiseWhen(provider.exists(p => !registry.contains(p)))(IllegalArgumentException("unknown provider"))
+      token    <- IO.fromOption(sys.env.get("CALENDAR_BLOCKER_GITHUB_TOKEN").filter(_.nonEmpty))(IllegalArgumentException("CALENDAR_BLOCKER_GITHUB_TOKEN must be set for serve"))
+      repo      = GitHubConfigRepository(token, sys.env.getOrElse("CALENDAR_BLOCKER_CONFIG_REPO", "dtrager02/calendar-blocker-config"),
+                    sys.env.getOrElse("CALENDAR_BLOCKER_CONFIG_PATH", "config.yaml"), sys.env.get("CALENDAR_BLOCKER_CONFIG_BRANCH"))
+      events   <- EventWeb.create(repo)
+      enabled   = registry.filter((id, _) => provider.forall(_ == id)).map((id, p) => id -> (if p.displayName.isEmpty then id.capitalize else p.displayName, p.auth))
+      ob       <- Onboard.create(enabled, s"$base${Onboard.CallbackPath}", a => store.onboard(a) >> IO.println(s"connected $a"), WebSessions(home), events)
       _        <- IO.println(s"Onboarding page at $base, listening on 127.0.0.1:${cfg.onboardPort}")
       _        <- Onboard.serve(ob, cfg.onboardPort).useForever
     yield ExitCode.Success

@@ -3,80 +3,144 @@ package blocker
 import cats.effect.{IO, Ref}
 import munit.CatsEffectSuite
 
+import java.nio.file.Files
+
 class OnboardTest extends CatsEffectSuite:
-
   private val alice = Account("google", "alice@x.com")
-
   private class FakeAuth(result: Either[String, Account]) extends AuthProvider:
     def authorizationUrl(state: String, redirectUri: String) = s"https://consent.example/?state=$state"
     def completeAuthorization(code: String, redirectUri: String) = IO.pure(result)
 
-  private def setup(result: Either[String, Account] = Right(alice)) =
-    for
-      connected <- Ref.of[IO, List[Account]](Nil)
-      ob        <- Onboard.create(FakeAuth(result), "https://calendar.example.com/callback", a => connected.update(a :: _))
-    yield (ob, connected)
+  private def setup(result: Either[String, Account] = Right(alice)) = for
+    connected <- Ref.of[IO, List[Account]](Nil)
+    dir <- IO.blocking(Files.createTempDirectory("web-onboard-test"))
+    store = WebSessions(dir)
+    events <- EventWeb.create(new ConfigRepository:
+      def read = IO.pure(ConfigSnapshot("base", "timezone: UTC\nowner: alice@x.com\nrequests: []\n"))
+      def submit(p: Proposal) = IO.pure(PullRequest("https://github.com/example/config/pull/1"))
+      def editUrl = "https://github.com/example/config"
+    )
+    ob <- Onboard.create(Map("google" -> ("Google", FakeAuth(result))), "https://calendar.example.com/callback",
+      a => connected.update(a :: _), store, events)
+  yield (ob, connected, store)
 
-  private def start(ob: Onboard) =
-    ob.handle(Onboard.StartPath, Map.empty).map { r =>
-      assertEquals(r.status, 302)
-      r.location.get.split("state=")(1)
-    }
+  private def cookie(response: Response, name: String): String = response.cookies.find(_.startsWith(name + "=")).get.split(";", 2)(0).split("=", 2)(1)
+  private def start(ob: Onboard) = ob.handle(WebRequest("GET", "/start")).map(r => cookie(r, Onboard.StateCookie))
+  private def callback(ob: Onboard, state: String, query: Map[String, String] = Map("code" -> "c")) =
+    ob.handle(WebRequest("GET", "/callback", query + ("state" -> state), cookies = Map(Onboard.StateCookie -> state)))
 
-  test("the landing page offers to connect") {
-    setup().flatMap((ob, _) => ob.handle("/", Map.empty)).map { r =>
+  test("landing page enables registered providers and disables placeholders") {
+    setup().flatMap((ob, _, _) => ob.handle(WebRequest("GET", "/"))).map { r =>
       assertEquals(r.status, 200)
-      assert(r.body.contains("""href="/start""""))
+      assert(r.body.contains("Sign in with Google"))
+      assert(r.body.contains("disabled>Sign in with Outlook"))
+      assert(r.body.contains("disabled>Sign in with Apple"))
+      assert(!r.body.contains("<script"))
     }
   }
 
-  test("anyone can start, and a completed callback connects the account the provider reports") {
+  test("OAuth callback stores the verified identity, sets a secure session, and returning users see events") {
     for
-      (ob, connected) <- setup()
-      state           <- start(ob)
-      r               <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
-      accounts        <- connected.get
+      (ob, connected, store) <- setup()
+      state <- start(ob)
+      response <- callback(ob, state)
+      accounts <- connected.get
+      token = cookie(response, Onboard.SessionCookie)
+      session <- store.get(token)
+      home <- ob.handle(WebRequest("GET", "/", cookies = Map(Onboard.SessionCookie -> token)))
+      dashboard <- ob.handle(WebRequest("GET", "/events", cookies = Map(Onboard.SessionCookie -> token)))
     yield
-      assertEquals(r.status, 200)
-      assert(r.body.contains("Connected as alice@x.com"))
+      assertEquals(response.status, 303)
+      assertEquals(response.location, Some("/events"))
+      assert(response.cookies.head.contains("Secure; HttpOnly; SameSite=Lax"))
+      assertEquals(accounts, List(alice))
+      assertEquals(session.map(_.account), Some(alice))
+      assertEquals(home.location, Some("/events"))
+      assert(dashboard.body.contains("Create an event"))
+  }
+
+  test("missing browser binding, forged state, and replay are rejected") {
+    for
+      (ob, connected, _) <- setup()
+      state <- start(ob)
+      unbound <- ob.handle(WebRequest("GET", "/callback", Map("state" -> state, "code" -> "c")))
+      forged <- callback(ob, "forged")
+      valid <- callback(ob, state)
+      replay <- callback(ob, state)
+      accounts <- connected.get
+    yield
+      assertEquals(List(unbound.status, forged.status, replay.status), List(403, 403, 403))
+      assertEquals(valid.status, 303)
       assertEquals(accounts, List(alice))
   }
 
-  test("forged, missing and replayed states are rejected") {
+  test("rejection and cancellation connect nothing and escape provider errors") {
     for
-      (ob, connected) <- setup()
-      forged          <- ob.handle(Onboard.CallbackPath, Map("state" -> "forged", "code" -> "c"))
-      missing         <- ob.handle(Onboard.CallbackPath, Map("code" -> "c"))
-      state           <- start(ob)
-      _               <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
-      replay          <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
-      accounts        <- connected.get
+      (ob, connected, _) <- setup(Left("Missing <permission>."))
+      state <- start(ob)
+      rejected <- callback(ob, state)
+      next <- start(ob)
+      cancelled <- callback(ob, next, Map("error" -> "access_denied"))
+      accounts <- connected.get
     yield
-      assertEquals(List(forged.status, missing.status, replay.status), List(403, 403, 403))
-      assertEquals(accounts.size, 1)
+      assertEquals(rejected.status, 400)
+      assert(rejected.body.contains("Missing &lt;permission&gt;."))
+      assertEquals(cancelled.status, 400)
+      assertEquals(accounts, Nil)
   }
 
-  test("provider rejection connects nothing and offers a retry, with the message escaped") {
+  test("sign-out needs CSRF and invalidates the session without disconnecting the account") {
     for
-      (ob, connected) <- setup(Left("Missing <permission>."))
-      state           <- start(ob)
-      r               <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "code" -> "c"))
-      accounts        <- connected.get
+      (ob, connected, store) <- setup()
+      state <- start(ob)
+      response <- callback(ob, state)
+      token = cookie(response, Onboard.SessionCookie)
+      session <- store.get(token).map(_.get)
+      invalid <- ob.handle(WebRequest("POST", "/signout", cookies = Map(Onboard.SessionCookie -> token)))
+      stillThere <- store.get(token)
+      signedOut <- ob.handle(WebRequest("POST", "/signout", fields = Map("csrf" -> session.csrf), cookies = Map(Onboard.SessionCookie -> token)))
+      gone <- store.get(token)
+      accounts <- connected.get
+      unauth <- ob.handle(WebRequest("GET", "/events"))
     yield
-      assertEquals(r.status, 400)
-      assert(r.body.contains("Missing &lt;permission&gt;.") && r.body.contains("""href="/start""""))
-      assert(accounts.isEmpty)
+      assertEquals(invalid.status, 403)
+      assert(stillThere.isDefined)
+      assertEquals(signedOut.location, Some("/"))
+      assertEquals(gone, None)
+      assertEquals(accounts, List(alice))
+      assertEquals(unauth.location, Some("/"))
   }
 
-  test("cancelling on the consent screen is reported") {
+  test("provider selection is generic and disabled provider routes cannot authenticate") {
     for
-      (ob, _) <- setup()
-      state   <- start(ob)
-      r       <- ob.handle(Onboard.CallbackPath, Map("state" -> state, "error" -> "access_denied"))
-    yield assertEquals(r.status, 400)
+      (ob, _, _) <- setup()
+      unsupported <- ob.handle(WebRequest("GET", "/start", Map("provider" -> "apple")))
+    yield assertEquals(unsupported.status, 404)
   }
 
-  test("parseQuery decodes parameters") {
+  test("registering another provider exposes its button and dispatches its callback") {
+    for
+      dir <- IO.blocking(Files.createTempDirectory("provider-registry-test"))
+      store = WebSessions(dir)
+      events <- EventWeb.create(new ConfigRepository:
+        def read = IO.raiseError(new UnsupportedOperationException)
+        def submit(p: Proposal) = IO.raiseError(new UnsupportedOperationException)
+        def editUrl = "https://github.com/test/config"
+      )
+      outlook = Account("outlook", "person@example.com")
+      ob <- Onboard.create(Map("google" -> ("Google", FakeAuth(Right(alice))), "outlook" -> ("Outlook", FakeAuth(Right(outlook)))),
+        "https://calendar.example/callback", _ => IO.unit, store, events)
+      home <- ob.handle(WebRequest("GET", "/"))
+      started <- ob.handle(WebRequest("GET", "/start", Map("provider" -> "outlook")))
+      signedIn <- callback(ob, cookie(started, Onboard.StateCookie))
+      session <- store.get(cookie(signedIn, Onboard.SessionCookie))
+    yield
+      assert(home.body.contains("href=\"/start?provider=outlook\""))
+      assert(!home.body.contains("disabled>Sign in with Outlook"))
+      assertEquals(session.map(_.account), Some(outlook))
+  }
+
+  test("parseQuery decodes form fields") {
     assertEquals(Onboard.parseQuery("a=1&b=x%2By&c"), Map("a" -> "1", "b" -> "x+y", "c" -> ""))
     assertEquals(Onboard.parseQuery(null), Map.empty)
   }

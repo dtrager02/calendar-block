@@ -15,6 +15,7 @@ object blocker extends ScalaModule {
     mvn"io.circe::circe-core:$circeVersion",
     mvn"io.circe::circe-parser:$circeVersion",
     mvn"io.circe::circe-yaml-v12:1.15.0",
+    mvn"org.snakeyaml:snakeyaml-engine:2.10",
     mvn"com.google.apis:google-api-services-calendar:v3-rev20260925-2.0.0",
     mvn"com.google.api-client:google-api-client:2.9.2",
     mvn"com.google.http-client:google-http-client-gson:2.2.0",

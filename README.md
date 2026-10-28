@@ -64,15 +64,35 @@ chmod 600 ~/.config/calendar-blocker/credentials.json
 java -jar out/blocker/assembly.dest/out.jar validate   # checks the config
 ```
 
-### Onboarding page (self-serve)
-`serve` runs a small, always-on onboarding page. Scheduling itself stays a cron job. **Anyone** can open the page and connect their Google Calendar:
+### Onboarding and event management (self-serve)
+`serve` runs an always-on, server-rendered website. Scheduling itself stays a cron job. **Anyone** can connect their Google Calendar without needing a GitHub account:
 
-1. They visit `https://calendar.jeopardy.fit/` and click **Connect Google Calendar**.
-2. They sign in and approve both permissions.
-3. The app stores their token. Nothing else happens until they're named in the shared config:
-   - **Not in any request:** nothing of theirs is read, and no Auto Blocks calendar is created for them.
-   - **Named in a request:** the next run reads their calendars, creates their Auto Blocks calendar if they organize an event, and books time.
-4. Expired logins are fixed the same way, by connecting again.
+1. Visit `https://calendar.jeopardy.fit/` and click **Sign in with Google**. Outlook, Apple, and more-provider buttons are disabled placeholders.
+2. Sign in and approve both calendar permissions. Returning visitors with a valid browser session go directly to their events.
+3. View a grid of approved event configurations that mention the signed-in email, including requests whose attendees default to the config owner.
+4. Create an event, or propose editing/removing any event that mentions you. Forms support shared attendees, all recurrence types, multiple time windows, and advanced priorities/strategy weights, without JavaScript. The organizer is fixed at creation and cannot be transferred through an edit.
+5. Submit to create a PR in the separate config repository. The PR body and commit message identify the provider-verified requester; commits use the token owner's GitHub identity. The receipt links to the PR.
+6. A maintainer reviews and merges the PR. The next hourly scheduler run pulls the merged config and applies it. Pending proposals do not appear as active configurations.
+
+Calendar authorization alone does not book anything. Only approved requests cause calendar reads and bookings. Removing a request deletes its future blocks, including joint-event invitations, after the PR is merged. Existing calendar events are never edited.
+
+**Configure GitHub access before starting `serve`:** create a fine-grained personal access token restricted to the config repository, with **Contents: read/write** and **Pull requests: read/write** (Metadata read is implicit). Give it an expiration and replace it before it expires. Keep it on the server, outside both repositories. For the supplied systemd unit, create `~/.config/calendar-blocker/web.env`, owned by the service user with mode `600`:
+
+```dotenv
+CALENDAR_BLOCKER_GITHUB_TOKEN=your-fine-grained-token
+CALENDAR_BLOCKER_CONFIG_REPO=dtrager02/calendar-blocker-config
+CALENDAR_BLOCKER_CONFIG_PATH=config.yaml
+# Optional; otherwise GitHub's default branch is used:
+# CALENDAR_BLOCKER_CONFIG_BRANCH=main
+```
+
+The website reads the current config from GitHub, pins forms to a base commit, and creates each proposal on its own branch. It never edits the cron checkout. Forms based on an outdated commit must be reloaded. Retrying the same submission recovers an already-created branch/PR; double-clicking submit does not create duplicate PRs. Forms expire after an hour and open forms/receipts are lost on a service restart; check GitHub before starting a replacement proposal.
+
+Generated changes preserve unrelated YAML text and comments. Simple scalar edits preserve the existing event layout; structural edits may normalize the changed event while retaining its comments. Configs containing YAML aliases, or a flow-style root without a requests field, require manual GitHub editing.
+
+**Repository visibility:** the default config repository is public. Event titles, descriptions, locations, and attendee addresses submitted here become public in PRs and Git history. Use a private repository if these should be private, and point both the website and cron checkout at it. Calendar credentials and browser sessions never enter this repository.
+
+Browser sessions last 30 days. Only hashed session identifiers, account identity, expiration, and CSRF secrets are stored in owner-only files under `<home>/sessions/`; calendar tokens never go in cookies. Sign out invalidates the browser session without revoking calendar access. Reconnect through Google to repair revoked/expired calendar credentials. HTTPS through the tunnel is required for the secure cookies.
 
 Limits on who can connect:
 - **Testing mode:** Google itself only lets your listed test users sign in.
@@ -84,7 +104,7 @@ sudo cp deploy/calendar-blocker-onboarding.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now calendar-blocker-onboarding
 ```
 - The page listens only on `127.0.0.1:<onboardPort>` (default 8735).
-- It reads the config once at startup, so restart it if `publicBaseUrl` or `onboardPort` changes.
+- It reads server settings from the local config at startup, so restart it if `publicBaseUrl` or `onboardPort` changes. Event forms and cards read the approved config directly from GitHub.
 
 **Expose it with a Cloudflare Tunnel:**
 1. In the Cloudflare dashboard, go to **Zero Trust → Networks → Tunnels**.
@@ -147,5 +167,5 @@ Every key is validated, and unknown keys are rejected. Run `validate --config FI
 
 ### Adding a provider (e.g. Outlook)
 1. Implement `CalendarProvider` and `AuthProvider` in a new package. `applyAll` receives all of a run's writes at once, so map it onto the backend's batch API if it has one (Graph `$batch`); otherwise run the operations in sequence. Map `BlockTag` onto the provider's own event metadata (Graph `singleValueExtendedProperties`, CalDAV `X-` properties, and so on).
-2. Register the provider in `Main.providers`.
-3. Refer to that provider's people as `outlook:someone@example.com` in `attendees`, and run a second onboarding page with `serve --provider outlook`.
+2. Register the provider and its display name in `Main.providers`. The website automatically offers a sign-in button; OAuth state selects the provider while sharing `/callback`.
+3. Refer to that provider's people as `outlook:someone@example.com` in `attendees`. `serve` exposes all registered providers; `serve --provider outlook` restricts the page to one provider.
