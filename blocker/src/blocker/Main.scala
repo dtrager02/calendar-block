@@ -126,13 +126,14 @@ object Main extends IOApp:
   private def serveCmd(home: Path, config: Path, provider: Option[String]): IO[ExitCode] =
     val store = TokenStore(home)
     for
+      webEnv   <- WebEnv.load(home.resolve("web.env"))
+      token    <- IO.fromOption(webEnv.get("CALENDAR_BLOCKER_GITHUB_TOKEN").filter(_.nonEmpty))(IllegalArgumentException(s"Set CALENDAR_BLOCKER_GITHUB_TOKEN in ${home.resolve("web.env")} for serve"))
       cfg      <- Config.load(config)
       base     <- IO.fromOption(cfg.publicBaseUrl)(IllegalArgumentException("publicBaseUrl must be set in the config"))
       registry <- providers(home, store, cfg)
       _        <- IO.raiseWhen(provider.exists(p => !registry.contains(p)))(IllegalArgumentException("unknown provider"))
-      token    <- IO.fromOption(sys.env.get("CALENDAR_BLOCKER_GITHUB_TOKEN").filter(_.nonEmpty))(IllegalArgumentException("CALENDAR_BLOCKER_GITHUB_TOKEN must be set for serve"))
-      repo      = GitHubConfigRepository(token, sys.env.getOrElse("CALENDAR_BLOCKER_CONFIG_REPO", "dtrager02/calendar-blocker-config"),
-                    sys.env.getOrElse("CALENDAR_BLOCKER_CONFIG_PATH", "config.yaml"), sys.env.get("CALENDAR_BLOCKER_CONFIG_BRANCH"))
+      repo      = GitHubConfigRepository(token, webEnv.getOrElse("CALENDAR_BLOCKER_CONFIG_REPO", "dtrager02/calendar-blocker-config"),
+                    webEnv.getOrElse("CALENDAR_BLOCKER_CONFIG_PATH", "config.yaml"), webEnv.get("CALENDAR_BLOCKER_CONFIG_BRANCH"))
       events   <- EventWeb.create(repo)
       enabled   = registry.filter((id, _) => provider.forall(_ == id)).map((id, p) => id -> (if p.displayName.isEmpty then id.capitalize else p.displayName, p.auth))
       ob       <- Onboard.create(enabled, s"$base${Onboard.CallbackPath}", a => store.onboard(a) >> IO.println(s"connected $a"), WebSessions(home), events)

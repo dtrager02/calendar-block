@@ -76,7 +76,7 @@ java -jar out/blocker/assembly.dest/out.jar validate   # checks the config
 
 Calendar authorization alone does not book anything. Only approved requests cause calendar reads and bookings. Removing a request deletes its future blocks, including joint-event invitations, after the PR is merged. Existing calendar events are never edited.
 
-**Configure GitHub access before starting `serve`:** create a fine-grained personal access token restricted to the config repository, with **Contents: read/write** and **Pull requests: read/write** (Metadata read is implicit). Give it an expiration and replace it before it expires. Keep it on the server, outside both repositories. For the supplied systemd unit, create `~/.config/calendar-blocker/web.env`, owned by the service user with mode `600`:
+**Configure GitHub access before starting `serve`:** create a fine-grained personal access token restricted to the config repository, with **Contents: read/write** and **Pull requests: read/write** (Metadata read is implicit). Give it an expiration and replace it before it expires. Keep it on the server, outside both repositories. Create `~/.config/calendar-blocker/web.env`, owned by the user running the app with mode `600`:
 
 ```dotenv
 CALENDAR_BLOCKER_GITHUB_TOKEN=your-fine-grained-token
@@ -84,6 +84,15 @@ CALENDAR_BLOCKER_CONFIG_REPO=dtrager02/calendar-blocker-config
 CALENDAR_BLOCKER_CONFIG_PATH=config.yaml
 # Optional; otherwise GitHub's default branch is used:
 # CALENDAR_BLOCKER_CONFIG_BRANCH=main
+```
+
+`serve` reads this file directly at startup; no shell exports or systemd environment settings are needed. With `--home DIR`, it reads `DIR/web.env`. File values override environment variables; environment variables remain supported when a key or the file is absent. Blank lines, comments, optional `export` prefixes, and single/double-quoted values are accepted. Values are literal: shell expressions, variable substitutions, and escape sequences are not evaluated. Restart the app after changing the file.
+
+To rebuild and run manually from the source checkout:
+
+```sh
+./mill blocker.assembly
+java -jar out/blocker/assembly.dest/out.jar serve
 ```
 
 The website reads the current config from GitHub, pins forms to a base commit, and creates each proposal on its own branch. It never edits the cron checkout. Forms based on an outdated commit must be reloaded. Retrying the same submission recovers an already-created branch/PR; double-clicking submit does not create duplicate PRs. Forms expire after an hour and open forms/receipts are lost on a service restart; check GitHub before starting a replacement proposal.
