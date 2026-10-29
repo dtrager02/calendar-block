@@ -33,7 +33,17 @@ final class EventWeb private(repository: ConfigRepository, drafts: Ref[IO, Map[S
           case None => IO.pure(message(409, "This form expired. Reload the dashboard to start again."))
           case Some(draft) =>
             val action = fields.getOrElse("action", "submit")
-            if action == "add-window" || action.startsWith("remove-window-") then
+            val dayAction = action match
+              case s"select-all-days-$index" => index.toIntOption.map(_ -> "on")
+              case s"clear-days-$index" => index.toIntOption.map(_ -> "")
+              case _ => None
+            if dayAction.isDefined then
+              val (index, selected) = dayAction.get
+              if draft.remove || index < 0 || index >= EventForm.count(fields) then IO.pure(message(400, "Invalid form action."))
+              else
+                val next = fields ++ EventForm.Days.map(day => s"day$index$day" -> selected)
+                IO.pure(form(session, fields("submission"), draft, next))
+            else if action == "add-window" || action.startsWith("remove-window-") then
               if draft.remove then IO.pure(message(400, "Invalid form action."))
               else
                 val count = EventForm.count(fields)
@@ -146,7 +156,10 @@ final class EventWeb private(repository: ConfigRepository, drafts: Ref[IO, Map[S
       val recurrence = List("daily", "weekly", "once").map(r => s"<option${if value("recurrence") == r then " selected" else ""}>$r</option>").mkString
       val windows = (0 until EventForm.count(fields)).map { i =>
         val days = EventForm.Days.map(d => s"<label class=\"day\"><input type=\"checkbox\" name=\"day$i$d\"${if value(s"day$i$d") == "on" then " checked" else ""}>$d</label>").mkString
-        s"<fieldset><legend>Time window ${i + 1}</legend>$days${input(s"from$i", "From", "time", true)}${input(s"to$i", "To", "time", true)}" +
+        s"<fieldset><legend>Time window ${i + 1}</legend>$days" +
+          s"<div><button name=\"action\" value=\"select-all-days-$i\" formnovalidate>Select all days</button>" +
+          s"<button name=\"action\" value=\"clear-days-$i\" formnovalidate>Clear days</button></div>" +
+          s"${input(s"from$i", "From", "time", true)}${input(s"to$i", "To", "time", true)}" +
           (if EventForm.count(fields) > 1 then s"<button name=\"action\" value=\"remove-window-$i\" formnovalidate>Remove window</button>" else "") + "</fieldset>"
       }.mkString
       input("title", "Title", required = true) + s"<label>Description<textarea name=\"description\">${escape(value("description"))}</textarea></label>" +
@@ -179,10 +192,13 @@ object WebHtml:
   def page(status: Int, body: String): Response = Response(status,
     s"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
        |<title>calendar-blocker</title><style>
-       |body{font:16px/1.5 system-ui,sans-serif;max-width:70rem;margin:2rem auto;padding:0 1rem;color:#202124;background:#fafafa}
+       |body{font:16px/1.5 system-ui,sans-serif;max-width:70rem;margin:2rem auto;padding:0 1rem;color:#202124;background:#fafafa;min-height:calc(100vh - 4rem);box-sizing:border-box;display:flex;flex-direction:column}
        |a{color:#1659ad}h1,h2,h3{line-height:1.2}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,19rem),1fr));gap:1rem}
        |article,fieldset{border:1px solid #ccc;padding:1rem;margin:1rem 0;min-width:0;overflow-wrap:anywhere}form{max-width:42rem}
        |label{display:block;margin:.7rem 0}input:not([type=checkbox]),textarea,select{display:block;box-sizing:border-box;width:100%;padding:.5rem;font:inherit}
        |button,.signin{font:inherit;padding:.6rem 1rem;margin:.4rem .4rem .4rem 0;cursor:pointer}.signin{display:block;max-width:20rem;text-align:center;border:1px solid #bbb;text-decoration:none}
        |button:disabled{cursor:default}.day{display:inline-block;margin:.4rem}details{margin:1rem 0}[role=alert]{border-left:4px solid #a21;padding:1rem;background:#fff0ed}
-       |</style></head><body><h1>calendar-blocker</h1>$body</body></html>""".stripMargin)
+       |footer{margin-top:auto;padding-top:2rem;text-align:right;font-size:.75rem}footer a{color:#555}
+       |</style></head><body><main><h1>calendar-blocker</h1>$body</main><footer><nav aria-label="Legal">
+       |<a href="/terms">Terms of Service</a> · <a href="/privacy">Privacy Policy</a>
+       |</nav></footer></body></html>""".stripMargin)

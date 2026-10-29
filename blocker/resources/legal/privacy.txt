@@ -1,0 +1,165 @@
+CALENDAR-BLOCKER PRIVACY POLICY
+Effective date: October 28, 2026
+
+Operator: Daniel Trager
+Location: California, United States
+Privacy contact: dtrager02@gmail.com
+Service: https://calendar.jeopardy.fit
+
+This Policy explains how calendar-blocker handles information when you visit
+the website, connect a calendar, or submit scheduling requests.
+
+1. Account information and Google authorization
+
+When you connect Google Calendar, the Service identifies your account using
+your primary calendar's email address. It stores that email, your provider
+identifier, a refresh token needed for ongoing access, and the identifier of
+any app-created calendar. Access tokens are used in memory. The Service does
+not receive or store your Google password.
+
+Google permissions requested are:
+- calendar.readonly: read calendars and calendar events available to your account.
+- calendar.app.created: create a separate calendar and manage events only on
+  calendars created by the app.
+
+The Service does not use these permissions to edit or delete events on your
+existing calendars. You can decline authorization, although calendar scheduling
+will then be unavailable.
+
+2. Calendar information used for scheduling
+
+For accounts named in approved scheduling requests, the Service reads calendar
+lists and relevant events, including subscribed calendars unless excluded in
+configuration. Unmanaged events are reduced to start/end times and busy status
+for scheduling. Their titles, descriptions, locations, attendee lists, and
+calendar names are not persisted by the app or included in GitHub proposals.
+External-event snapshots remain in memory for the scheduling run and are not
+kept as a historical calendar database.
+
+The Service also processes its own managed-event identifiers, timing,
+participant identifiers, and response status to reconcile bookings and handle
+declines. These managed events and their details are stored in Google Calendar.
+For connected people not named in a request, the scheduler may still read their
+app-created calendar to clean up obsolete blocks. Account identification and
+calendar-list checks can occur without reading their unrelated events.
+
+3. Scheduling requests and GitHub publication
+
+The Service processes the titles, descriptions, locations, attendee addresses,
+durations, recurrence, time windows, priorities, and preferences you submit.
+It uses them to propose configuration changes and create or update managed
+calendar events. Shared-event details and attendee identities may be visible
+to other participants and their calendar providers through invitations and
+updates.
+
+IMPORTANT: The default configuration repository is public:
+https://github.com/dtrager02/calendar-blocker-config
+
+Submitting a change publishes the proposed configuration to GitHub, including
+its event details and attendee addresses. Your provider identifier and verified
+account email are recorded in the pull request and commit message to identify
+the requester. Other people, search engines, and repository copies may retain
+that information. The app does not publish OAuth credentials or session
+secrets to GitHub. The website displays approved requests that mention your
+email, but the public repository itself is not restricted to those requests.
+
+Maintainers review proposed changes. Removing a request from the active
+configuration does not remove prior pull requests, commits, Git history,
+repository clones, or past calendar events. Do not put confidential or
+sensitive information in event settings.
+
+4. Cookies, browser sessions, and temporary forms
+
+The website uses essential cookies for sign-in security and authenticated
+sessions. The OAuth state cookie lasts up to 15 minutes. The session cookie
+lasts up to 30 days unless you sign out or invalidate it sooner. Server-side
+session files contain a hashed session identifier, provider, email, expiration,
+and a request-protection secret. Calendar refresh tokens are not placed in
+browser cookies.
+
+Form drafts, config snapshots, and submission receipts are held in server
+memory. Forms expire after one hour; expired entries are discarded during
+later cleanup or when the process restarts. The application does not include
+advertising trackers or third-party analytics scripts.
+
+5. Operations, infrastructure, and sharing
+
+Connection and scheduling logs may contain account emails, request identifiers,
+scheduling times, and operation/error information. The app does not intentionally
+log OAuth tokens or unrelated calendar-event contents. Hosting and network
+providers, including Oracle Cloud Infrastructure and Cloudflare, may process
+IP addresses, request metadata, and security logs to deliver and protect the
+website. Google and GitHub process information sent to their APIs under their
+own terms and privacy policies.
+
+The operator and authorized maintainers may access stored account records,
+settings, proposals, and operational logs as needed for support, review,
+security, and administration. Information may also be disclosed when legally
+required or reasonably necessary to protect users, enforce the Terms, or
+address fraud and security incidents.
+
+The Service does not sell personal information, use it for targeted advertising,
+or share it for cross-context behavioral advertising. Calendar information is
+not used to train generalized artificial intelligence or machine-learning
+models. Google's user data is used only to provide and support the requested
+calendar and account functionality. The Service's use and transfer of
+information received from Google APIs will adhere to the Google API Services
+User Data Policy, including its Limited Use requirements:
+https://developers.google.com/terms/api-services-user-data-policy
+
+6. Storage, security, and retention
+
+The Service uses HTTPS for its public website and provider API connections.
+OAuth credentials, account state, and browser-session files are stored on the
+server with owner-only file permissions. These measures reduce risk but cannot
+guarantee absolute security.
+
+Refresh tokens and account/calendar identifiers are retained until removed by
+the operator; revoking access does not automatically erase those files.
+Session expiration prevents further authentication, but an expired session file
+may remain until checked again or removed by the operator. Operational logs
+and local config checkouts do not currently have an app-enforced automatic
+deletion schedule. Contact the operator to request deletion of records under
+the operator's control. Records may be retained where needed for applicable
+legal requirements, security, or dispute resolution.
+
+GitHub history and Google Calendar events have separate retention controlled
+by those services, repository administrators, account holders, and any copies
+made by others. Complete removal of publicly distributed information cannot
+be guaranteed.
+
+7. Your choices and privacy requests
+
+- Revoke future Google access at https://myaccount.google.com/permissions.
+- Sign out to end the current browser session. Signing out does not stop
+  scheduling or revoke calendar authorization.
+- Propose removal of requests to stop future scheduling after approval and
+  the next scheduler run. Revocation before cleanup may require you to remove
+  managed events manually.
+- Email dtrager02@gmail.com to request access, correction, or deletion of your
+  personal information, or ask questions about its handling. The operator may
+  need to verify that a request comes from the account holder.
+
+Depending on applicable law, including California privacy law where it applies,
+you may have rights to know about, access, correct, delete, or receive a copy of
+your personal information, withdraw consent, and complain to a relevant
+regulator. Rights may be subject to legal exceptions and third-party retention.
+The operator will handle qualifying requests as required by applicable law and
+will not unlawfully discriminate against you for exercising those rights.
+
+8. International processing and children
+
+The Service is operated from California, United States. Providers may process
+information in the United States and other countries where they operate.
+
+The Service is intended for adults aged 18 and over and is not directed to
+children. If you believe a child supplied personal information, contact the
+operator so appropriate action can be taken.
+
+9. Policy changes and contact
+
+Updates will be published at https://calendar.jeopardy.fit/privacy with a new
+effective date. Material changes will be identified on that page, with
+additional notice or consent where required by applicable law.
+
+Contact: Daniel Trager, California, United States, dtrager02@gmail.com.

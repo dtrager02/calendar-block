@@ -10,7 +10,8 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.time.{Duration, Instant}
 import java.util.concurrent.Executors
 
-case class Response(status: Int, body: String, location: Option[String] = None, cookies: List[String] = Nil)
+case class Response(status: Int, body: String, location: Option[String] = None, cookies: List[String] = Nil,
+    contentType: String = "text/html; charset=utf-8")
 case class WebRequest(method: String, path: String, query: Map[String, String] = Map.empty,
     fields: Map[String, String] = Map.empty, cookies: Map[String, String] = Map.empty)
 private case class SignInState(provider: String, issued: Instant)
@@ -27,7 +28,8 @@ final class Onboard private (
   import WebHtml.*
 
   def handle(request: WebRequest): IO[Response] =
-    sessions.get(request.cookies.getOrElse(SessionCookie, "")).flatMap { session =>
+    if request.method == "GET" && LegalDocuments.Paths.contains(request.path) then IO.blocking(LegalDocuments.response(request.path))
+    else sessions.get(request.cookies.getOrElse(SessionCookie, "")).flatMap { session =>
       if request.method == "GET" && request.path == "/" then
         IO.pure(if session.isDefined then redirect("/events") else landing)
       else if request.method == "GET" && request.path == StartPath then start(request)
@@ -132,8 +134,8 @@ object Onboard:
         )
         val bytes = resp.body.getBytes(UTF_8)
         val headers = ex.getResponseHeaders
-        headers.set("Content-Type", "text/html; charset=utf-8")
-        headers.set("Cache-Control", "no-store")
+        headers.set("Content-Type", resp.contentType)
+        headers.set("Cache-Control", "no-store, no-transform")
         headers.set("Referrer-Policy", "no-referrer")
         headers.set("X-Content-Type-Options", "nosniff")
         headers.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")

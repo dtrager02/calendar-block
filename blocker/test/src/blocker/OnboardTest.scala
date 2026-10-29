@@ -59,6 +59,29 @@ class OnboardTest extends CatsEffectSuite:
       assert(dashboard.body.contains("Create an event"))
   }
 
+  test("legal documents are available as plaintext without signing in or connecting an account") {
+    for
+      (ob, connected, _) <- setup()
+      terms <- ob.handle(WebRequest("GET", "/terms"))
+      privacy <- ob.handle(WebRequest("GET", "/privacy"))
+      accounts <- connected.get
+    yield
+      List(terms, privacy).foreach { response =>
+        assertEquals(response.status, 200)
+        assertEquals(response.contentType, "text/plain; charset=utf-8")
+        assertEquals(response.location, None)
+        assertEquals(response.cookies, Nil)
+        assert(response.body.contains("Daniel Trager"))
+        assert(response.body.contains("dtrager02@gmail.com"))
+        assert(response.body.contains("California, United States"))
+        assert(!response.body.contains("<html"))
+      }
+      assert(terms.body.startsWith("CALENDAR-BLOCKER TERMS OF SERVICE"))
+      assert(privacy.body.startsWith("CALENDAR-BLOCKER PRIVACY POLICY"))
+      assert(privacy.body.contains("The default configuration repository is public"))
+      assertEquals(accounts, Nil)
+  }
+
   test("missing browser binding, forged state, and replay are rejected") {
     for
       (ob, connected, _) <- setup()

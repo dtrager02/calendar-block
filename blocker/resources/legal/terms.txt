@@ -1,0 +1,120 @@
+CALENDAR-BLOCKER TERMS OF SERVICE
+Effective date: October 28, 2026
+
+Operator: Daniel Trager
+Location: California, United States
+Contact: dtrager02@gmail.com
+Service: https://calendar.jeopardy.fit
+
+1. Agreement and eligibility
+
+These Terms govern your use of calendar-blocker (the Service), operated by
+Daniel Trager. By using the Service, you agree to these Terms. If you do not
+agree, do not use the Service. You must be at least 18 years old and have the
+authority to connect the calendar accounts and submit the information you use
+with the Service. If you act for an organization, you must be authorized to do so.
+
+2. What the Service does
+
+The Service helps find available time for personal and shared activities. With
+your authorization, it reads calendar information and manages events on a
+separate calendar created by the app. Google Calendar is currently supported.
+Buttons for future providers do not indicate that those integrations are active.
+
+Event settings are maintained in a separate GitHub repository. Website changes
+are submitted as pull requests and require maintainer approval before taking
+effect. Scheduling happens in periodic runs. A submitted or merged request does
+not guarantee a booking, an exact start time, or uninterrupted operation.
+Requests may be skipped when participants are unavailable or authorization
+expires. Managed events may move or be deleted as settings and availability
+change, and shared events may generate invitations or update notifications.
+
+3. Your responsibilities
+
+Provide accurate information, keep your provider account secure, and only
+connect accounts you are entitled to access. Obtain permission before adding
+someone else's contact information or including them in a shared activity.
+Anyone listed as an attendee may propose edits or removal of that shared
+request, subject to maintainer review.
+
+Do not use the Service for unlawful activity, harassment, spam, unauthorized
+access, or interference with the Service or third-party systems. Do not submit
+passwords, access tokens, financial information, or other confidential or
+sensitive information in event settings. Do not rely on the Service for
+emergency, safety-critical, medical, or other time-critical obligations. Check
+your calendar and maintain your own reminders and backups where appropriate.
+
+4. Your content and public configuration
+
+You retain ownership of information you submit. You grant the operator a
+nonexclusive permission to process, store, reproduce, and transmit that
+information only as needed to operate, secure, and support the Service,
+including creating GitHub proposals and calendar events.
+
+The default configuration repository is public. Submitted titles,
+descriptions, locations, attendee addresses, and the requesting account's email
+and provider identifier can appear in public pull requests, commits, and Git
+history. Do not submit information you do not want published. Removing a request
+does not erase historical commits, copies held by others, or past calendar
+events. The Privacy Policy explains this data handling in more detail:
+https://calendar.jeopardy.fit/privacy
+
+5. Third-party services
+
+The Service depends on services including Google, GitHub, Cloudflare, and its
+hosting provider. Their own terms and privacy policies also apply to your use
+of those services. The operator does not control their availability, actions,
+retention practices, or changes. calendar-blocker is not endorsed by Google,
+GitHub, Cloudflare, Apple, or Microsoft.
+
+6. Disconnecting, suspension, and termination
+
+You may stop using the Service at any time. You can revoke Google access at
+https://myaccount.google.com/permissions. Signing out of the website only ends
+that browser session; it does not revoke calendar authorization, cancel
+approved requests, or delete existing events.
+
+To stop future scheduling, propose removal of the relevant requests or contact
+the operator. Revocation prevents future authorized access but may also prevent
+the Service from cleaning up managed events. You can manage those events in
+your calendar yourself. Contact the operator to request deletion of stored
+account records as described in the Privacy Policy.
+
+The operator may restrict or discontinue access when needed for security,
+misuse, legal requirements, maintenance, or discontinuation of the Service,
+subject to applicable law.
+
+7. Availability and disclaimers
+
+To the extent permitted by law, the Service is provided "as is" and "as
+available," without warranties of merchantability, fitness for a particular
+purpose, noninfringement, accuracy, or availability. Scheduling mistakes,
+conflicts, delays, data loss, and third-party outages can occur. The operator
+does not promise that the Service will meet your requirements or run without
+errors.
+
+8. Limitation of liability
+
+To the extent permitted by law, the operator will not be liable for indirect,
+incidental, special, consequential, or punitive losses, including lost profits,
+lost opportunities, or loss of data arising from use of or inability to use the
+Service. Nothing in these Terms excludes liability or rights that applicable
+law does not allow to be excluded or limited.
+
+9. Governing law and disputes
+
+These Terms are governed by California law, excluding conflict-of-law rules,
+and applicable United States federal law. Mandatory consumer rights that apply
+to you remain unaffected. Please contact dtrager02@gmail.com first to try to
+resolve any concern. These Terms do not require arbitration or waive rights
+that cannot lawfully be waived.
+
+10. Changes and contact
+
+The operator may update these Terms by publishing a revised version at
+https://calendar.jeopardy.fit/terms with a new effective date. Material changes
+will be identified on that page, with additional notice where required by law.
+Changes apply prospectively, subject to applicable law. If you disagree with
+updated Terms, stop using the Service.
+
+Questions: Daniel Trager, California, United States, dtrager02@gmail.com.

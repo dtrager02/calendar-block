@@ -132,6 +132,34 @@ requests:
       assert(result.body.contains("invalid duration"))
       assertEquals(changes, Nil)
   }
+  test("selecting all or clearing days affects only the chosen window and preserves unfinished form fields") {
+    for
+      (web, proposals) <- setup
+      page <- web.handle("GET", "/events", Map.empty, Map.empty, session)
+      values = fields(page) ++ Map("windowCount" -> "2", "from1" -> "15:00", "to1" -> "17:00", "duration" -> "unfinished")
+      selected <- web.handle("POST", "/events/submit", Map.empty, values + ("action" -> "select-all-days-1"), session)
+      allSelected = values ++ EventForm.Days.map(day => s"day1$day" -> "on")
+      cleared <- web.handle("POST", "/events/submit", Map.empty, allSelected + ("action" -> "clear-days-1"), session)
+      invalid <- web.handle("POST", "/events/submit", Map.empty, values + ("action" -> "select-all-days-2"), session)
+      changes <- proposals.get
+    yield
+      assertEquals(selected.status, 200)
+      assertEquals(cleared.status, 200)
+      EventForm.Days.foreach { day =>
+        assert(selected.body.contains(s"name=\"day1$day\" checked"))
+        assert(!cleared.body.contains(s"name=\"day1$day\" checked"))
+      }
+      List(selected, cleared).foreach { response =>
+        assert(response.body.contains("name=\"day0MON\" checked"))
+        assert(response.body.contains("name=\"from1\" value=\"15:00\""))
+        assert(response.body.contains("name=\"duration\" value=\"unfinished\""))
+        assert(response.body.contains("New &lt;event&gt;"))
+        assert(response.body.contains("value=\"select-all-days-1\" formnovalidate"))
+        assert(response.body.contains("value=\"clear-days-1\" formnovalidate"))
+      }
+      assertEquals(invalid.status, 400)
+      assertEquals(changes, Nil)
+  }
   test("once recurrence, finite strategy weights and unique attendees are validated") {
     val values = EventForm.Defaults ++ Map("title" -> "Once", "recurrence" -> "once", "betweenFrom" -> "2026-12-01", "betweenTo" -> "2026-12-05",
       "day0MON" -> "on", "from0" -> "09:00", "to0" -> "17:00")

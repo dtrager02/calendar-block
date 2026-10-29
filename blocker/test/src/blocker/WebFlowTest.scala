@@ -43,11 +43,14 @@ class WebFlowTest extends CatsEffectSuite:
         }
         for
           home <- request("/")
+          terms <- request("/terms")
+          privacy <- request("/privacy")
           start <- request("/start")
           state = cookie(start, Onboard.StateCookie)
           callback <- request("/callback?code=test&state=" + state.split("=", 2)(1), state)
           session = cookie(callback, Onboard.SessionCookie)
           page <- request("/events", session)
+          signedInPrivacy <- request("/privacy", session)
           fields = EventForm.Defaults ++ Map("submission" -> field(page.body, "submission"), "csrf" -> field(page.body, "csrf"),
             "title" -> "Workout", "day0MON" -> "on", "from0" -> "09:00", "to0" -> "17:00")
           invalid <- request("/events/submit", session, Some(fields - "csrf"))
@@ -69,6 +72,17 @@ class WebFlowTest extends CatsEffectSuite:
           denied <- request("/events", session)
         yield
           assert(home.body.contains("Sign in with Google"))
+          List(home, page).foreach { response =>
+            assert(response.body.contains("<footer>"))
+            assert(response.body.contains("href=\"/terms\">Terms of Service</a>"))
+            assert(response.body.contains("href=\"/privacy\">Privacy Policy</a>"))
+          }
+          List(terms, privacy, signedInPrivacy).foreach { response =>
+            assertEquals(response.statusCode, 200)
+            assertEquals(response.headers.firstValue("content-type").get(), "text/plain; charset=utf-8")
+            assert(!response.body.contains("<html"))
+          }
+          assertEquals(signedInPrivacy.body, privacy.body)
           assertEquals(callback.statusCode, 303)
           assertEquals(invalid.statusCode, 403)
           assertEquals(field(added.body, "windowCount"), "2")
@@ -81,6 +95,8 @@ class WebFlowTest extends CatsEffectSuite:
           assertEquals(signedOut.statusCode, 303)
           assertEquals(denied.headers.firstValue("location").get(), "/")
           assert(page.headers.firstValue("content-security-policy").get().contains("default-src 'none'"))
+          assertEquals(page.headers.firstValue("cache-control").get(), "no-store, no-transform")
+          assert(page.body.contains("Signed in as person@example.com"))
           assert(!page.body.contains("<script"))
       }
     yield ()
