@@ -34,7 +34,7 @@ A cron-run script that reads the Google Calendars of everyone who has onboarded,
 
 ## Setup
 
-The server serves [Terms of Service](blocker/resources/legal/terms.txt) at `/terms` and a [Privacy Policy](blocker/resources/legal/privacy.txt) at `/privacy`, both as public UTF-8 plaintext. Login and event pages link to them in the footer. These files are bundled into the jar; rebuild and restart after editing them. They are generic templates describing this deployment and should be reviewed for your circumstances before relying on them.
+The server serves its [Terms of Service](blocker/resources/legal/terms.txt) at `/terms` and [Privacy Policy](blocker/resources/legal/privacy.txt) at `/privacy`, both as public UTF-8 plaintext. They describe calendar permissions, automated scheduling, participant responsibilities, public GitHub proposals, and the deployment's storage, retention, and privacy-request practices. Login and event pages link to them in the footer. These files are bundled into the jar; rebuild and restart after editing them, and keep them consistent with changes to the service and its data handling.
 
 ### Google Cloud Console (once)
 Use the project that owns the OAuth client.

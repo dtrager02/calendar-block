@@ -1,120 +1,199 @@
 CALENDAR-BLOCKER TERMS OF SERVICE
 Effective date: October 28, 2026
 
-Operator: Daniel Trager
-Location: California, United States
-Contact: dtrager02@gmail.com
 Service: https://calendar.jeopardy.fit
+Operator: Daniel Trager, California, United States
+Contact: dtrager02@gmail.com
+Privacy Policy: https://calendar.jeopardy.fit/privacy
 
-1. Agreement and eligibility
+1. Your agreement with the operator
 
-These Terms govern your use of calendar-blocker (the Service), operated by
-Daniel Trager. By using the Service, you agree to these Terms. If you do not
-agree, do not use the Service. You must be at least 18 years old and have the
-authority to connect the calendar accounts and submit the information you use
-with the Service. If you act for an organization, you must be authorized to do so.
+These Terms govern your access to and use of calendar-blocker, including its
+website, calendar connection, scheduling requests, and automated calendar
+operations. "We," "us," and "our" refer to Daniel Trager, the operator. "You"
+means the person using the Service or, when authorized, the organization on
+whose behalf that person acts.
 
-2. What the Service does
+By connecting a calendar, submitting a scheduling request, or otherwise using
+the Service after these Terms have been made available to you, you agree to
+these Terms. If you do not agree, do not connect a calendar or use the Service.
+You must be at least 18 and legally able to enter this agreement. You may act
+for another person or organization only with authority to do so.
 
-The Service helps find available time for personal and shared activities. With
-your authorization, it reads calendar information and manages events on a
-separate calendar created by the app. Google Calendar is currently supported.
-Buttons for future providers do not indicate that those integrations are active.
+Our Privacy Policy explains how the Service accesses, uses, stores, and shares
+information. Calendar access also requires the authorization you provide through
+Google's consent screen. These Terms do not expand the permissions granted by
+that authorization.
 
-Event settings are maintained in a separate GitHub repository. Website changes
-are submitted as pull requests and require maintainer approval before taking
-effect. Scheduling happens in periodic runs. A submitted or merged request does
-not guarantee a booking, an exact start time, or uninterrupted operation.
-Requests may be skipped when participants are unavailable or authorization
-expires. Managed events may move or be deleted as settings and availability
-change, and shared events may generate invitations or update notifications.
+2. Calendar access and the scheduling service
 
-3. Your responsibilities
+calendar-blocker finds time for activities within the days, time windows,
+durations, recurrence, and priorities recorded in its approved configuration.
+Google Calendar is the currently supported provider.
 
-Provide accurate information, keep your provider account secure, and only
-connect accounts you are entitled to access. Obtain permission before adding
-someone else's contact information or including them in a shared activity.
-Anyone listed as an attendee may propose edits or removal of that shared
-request, subject to maintainer review.
+Connecting Google authorizes ongoing access through a stored refresh token.
+The Service reads calendars available to connected accounts and manages events
+on a separate app-created calendar, normally named "Auto Blocks." It cannot use
+its requested write permission to edit or delete events on calendars it did
+not create. Connecting alone does not add a scheduling request or publish your
+account to the configuration repository.
 
-Do not use the Service for unlawful activity, harassment, spam, unauthorized
-access, or interference with the Service or third-party systems. Do not submit
-passwords, access tokens, financial information, or other confidential or
-sensitive information in event settings. Do not rely on the Service for
-emergency, safety-critical, medical, or other time-critical obligations. Check
-your calendar and maintain your own reminders and backups where appropriate.
+You authorize the Service to perform the following actions as necessary to
+carry out approved requests that include you:
+- Read calendar lists and relevant events to determine availability.
+- Create an app-managed calendar when you organize a scheduled activity.
+- Create, move, update, and delete future app-managed events as requests and
+  availability change.
+- Send calendar invitations and updates to participants in shared activities.
+- Read participant responses and remove a shared block when a guest declines.
 
-4. Your content and public configuration
+An approved request can recur and continue generating calendar events until
+it is removed or access is revoked. Higher-priority requests may displace
+lower-priority app-managed blocks. Unmanaged events take precedence. Events
+in later weeks may be re-optimized, so an existing block is not a guarantee of
+a fixed future time. Blocks that have started are not changed by the scheduler.
 
-You retain ownership of information you submit. You grant the operator a
-nonexclusive permission to process, store, reproduce, and transmit that
-information only as needed to operate, secure, and support the Service,
-including creating GitHub proposals and calendar events.
+Shared requests require usable calendar connections for all participants. An
+unavailable participant, expired authorization, lack of a suitable slot, an API
+failure, or a service outage can prevent scheduling. The scheduler runs
+periodically, normally hourly. Submitting or merging a request does not cause
+an immediate booking or guarantee that an event will be scheduled. Time windows
+use the shared timezone shown in the website, rather than necessarily the
+browser's or each participant's local timezone.
 
-The default configuration repository is public. Submitted titles,
-descriptions, locations, attendee addresses, and the requesting account's email
-and provider identifier can appear in public pull requests, commits, and Git
-history. Do not submit information you do not want published. Removing a request
-does not erase historical commits, copies held by others, or past calendar
-events. The Privacy Policy explains this data handling in more detail:
-https://calendar.jeopardy.fit/privacy
+3. Requests, review, and public GitHub records
 
-5. Third-party services
+The website reads approved event settings from a separate GitHub repository:
+https://github.com/dtrager02/calendar-blocker-config
 
-The Service depends on services including Google, GitHub, Cloudflare, and its
-hosting provider. Their own terms and privacy policies also apply to your use
-of those services. The operator does not control their availability, actions,
-retention practices, or changes. calendar-blocker is not endorsed by Google,
-GitHub, Cloudflare, Apple, or Microsoft.
+Creating, editing, or removing a request through the website creates a proposed
+change in a GitHub pull request. A maintainer must merge the proposal before
+the scheduler uses it. Maintainers may decline or ask for changes to a proposal.
+The website's event cards show approved configuration; a receipt or a pending
+pull request does not mean that the change is active.
 
-6. Disconnecting, suspension, and termination
+The repository is public. By submitting a proposal, you instruct the Service
+to publish its event details and attendee addresses to GitHub and to identify
+you by your verified account email and provider in the pull request and commit
+message. This publication can occur before approval, including when a proposal
+is later rejected. Public records can be indexed, downloaded, and copied.
+Deleting a branch, closing a pull request, or removing a request does not assure
+removal of commit history or copies held by others.
 
-You may stop using the Service at any time. You can revoke Google access at
-https://myaccount.google.com/permissions. Signing out of the website only ends
-that browser session; it does not revoke calendar authorization, cancel
-approved requests, or delete existing events.
+Do not submit confidential information, credentials, sensitive personal
+information, or any information you lack permission to publish. Read the
+Privacy Policy before including other people in a request.
 
-To stop future scheduling, propose removal of the relevant requests or contact
-the operator. Revocation prevents future authorized access but may also prevent
-the Service from cleaning up managed events. You can manage those events in
-your calendar yourself. Contact the operator to request deletion of stored
-account records as described in the Privacy Policy.
+4. Shared activities and responsibility for your submissions
 
-The operator may restrict or discontinue access when needed for security,
-misuse, legal requirements, maintenance, or discontinuation of the Service,
-subject to applicable law.
+A new request names its creator as organizer. The organizer owns the managed
+event on their app-created calendar, and other participants receive invitations.
+Any attendee named in an approved request may propose edits or removal of that
+request through the website, subject to maintainer approval. Other attendees
+can therefore affect a shared activity you helped create. The website does not
+require every attendee to approve each proposed change separately.
 
-7. Availability and disclaimers
+You are responsible for your submissions, their accuracy, and any permissions
+needed to disclose participant addresses and event details. Obtain the relevant
+participants' permission before proposing an activity involving them. Listing
+an address does not grant the Service access to that person's Google account;
+that person must connect their own account.
 
-To the extent permitted by law, the Service is provided "as is" and "as
-available," without warranties of merchantability, fitness for a particular
-purpose, noninfringement, accuracy, or availability. Scheduling mistakes,
-conflicts, delays, data loss, and third-party outages can occur. The operator
-does not promise that the Service will meet your requirements or run without
-errors.
+You retain your rights in your submitted content. You give us a nonexclusive,
+worldwide, royalty-free license to store, reproduce, transmit, display, and
+adapt it only as reasonably necessary to operate, secure, and support the
+Service, including publishing the GitHub proposals you request and formatting
+calendar events. This permission does not authorize selling your content or
+using it for advertising or generalized AI-model training. Public GitHub
+records and calendar copies already distributed may remain after you stop
+using the Service, as explained in the Privacy Policy.
 
-8. Limitation of liability
+5. Acceptable use and account security
 
-To the extent permitted by law, the operator will not be liable for indirect,
-incidental, special, consequential, or punitive losses, including lost profits,
-lost opportunities, or loss of data arising from use of or inability to use the
-Service. Nothing in these Terms excludes liability or rights that applicable
-law does not allow to be excluded or limited.
+Use only accounts and calendars you are authorized to access. Keep your Google
+account and browser session secure, and contact us if you suspect unauthorized
+use. Do not use the Service to send unwanted invitations, harass people,
+impersonate someone, violate others' privacy or intellectual-property rights,
+conduct unlawful activity, bypass access controls, or disrupt the Service or
+its providers.
 
-9. Governing law and disputes
+Review your calendars and proposals before relying on them. The Service is
+not designed for emergency response or obligations where a missed, moved, or
+duplicate event could cause injury or serious loss. You remain responsible
+for attending activities, maintaining other reminders you need, and checking
+that a proposed change has been approved and applied.
 
-These Terms are governed by California law, excluding conflict-of-law rules,
-and applicable United States federal law. Mandatory consumer rights that apply
-to you remain unaffected. Please contact dtrager02@gmail.com first to try to
-resolve any concern. These Terms do not require arbitration or waive rights
-that cannot lawfully be waived.
+6. Signing out, disconnecting, and deleting requests
 
-10. Changes and contact
+Signing out ends only the current browser session. It does not revoke Google
+access, stop approved recurring requests, remove stored credentials, or delete
+calendar events. To stop future authorized Google access, revoke the connection
+at https://myaccount.google.com/permissions.
 
-The operator may update these Terms by publishing a revised version at
-https://calendar.jeopardy.fit/terms with a new effective date. Material changes
-will be identified on that page, with additional notice where required by law.
-Changes apply prospectively, subject to applicable law. If you disagree with
-updated Terms, stop using the Service.
+To end a request while allowing the Service to clean up its future events,
+propose its removal and allow the approved change to run while the necessary
+calendar authorization remains available. Removing a request deletes its
+not-yet-started managed blocks on a subsequent run. For a shared event, that
+can also remove invitations from guests' calendars. Past events are not erased
+by removing the request.
 
-Questions: Daniel Trager, California, United States, dtrager02@gmail.com.
+Revoking access first may prevent automatic cleanup. You can then remove
+remaining managed events through Google Calendar yourself. Revocation does not
+by itself delete server-side account records or public GitHub history. Email
+dtrager02@gmail.com for account-data deletion or assistance, as described in the
+Privacy Policy.
+
+7. Third parties and changes to the Service
+
+The Service depends on Google Calendar, GitHub, Cloudflare, and Oracle Cloud
+Infrastructure. Their applicable terms and policies govern their services.
+They may change their APIs, permissions, availability, or limits. We do not
+control those changes or third-party copies of your information.
+
+We may maintain, modify, restrict, suspend, or discontinue the Service to address
+security, misuse, legal requirements, operational needs, or discontinuation of
+the project. Where required by law, we will provide notice. The Service is
+independently operated and is not endorsed by Google, GitHub, Cloudflare,
+Oracle, Apple, or Microsoft. These Terms do not transfer ownership of the
+Service's software or give rights beyond those separately granted for it.
+
+8. Disclaimers and limitation of liability
+
+To the fullest extent permitted by applicable law, the Service is provided
+"as is" and "as available." We disclaim implied warranties of merchantability,
+fitness for a particular purpose, and noninfringement. We do not warrant that
+scheduling will be accurate, timely, uninterrupted, secure, or error-free, or
+that all data or calendar changes can be recovered.
+
+To the fullest extent permitted by applicable law, we are not liable for
+indirect, incidental, special, consequential, or punitive damages arising out
+of the Service, including lost profits, missed activities, lost opportunities,
+or loss of data. Nothing in these Terms excludes liability for conduct, or
+limits a remedy or consumer right, where applicable law prohibits that
+exclusion or limitation.
+
+9. Governing law and general provisions
+
+California law, excluding its conflict-of-law rules, and applicable United
+States federal law govern these Terms. Mandatory protections available to you
+under other applicable law remain effective. Please contact dtrager02@gmail.com
+to try to resolve a dispute before filing a claim. These Terms do not require
+arbitration or waive any nonwaivable right to bring a claim.
+
+If a provision is unenforceable, the remaining provisions continue to apply.
+A failure to enforce a provision on one occasion is not a continuing waiver.
+These Terms govern use of the Service; they do not replace agreements you have
+with Google, GitHub, or other providers.
+
+10. Updates and contact
+
+We will publish revisions at https://calendar.jeopardy.fit/terms and identify
+their effective date. Material changes will be identified on that page, and
+additional notice or consent will be provided where required by law. Revisions
+apply prospectively. If you do not agree to a revision, stop using the Service
+and follow the disconnection steps above.
+
+Questions about these Terms or the Service may be sent to:
+Daniel Trager
+California, United States
+dtrager02@gmail.com
